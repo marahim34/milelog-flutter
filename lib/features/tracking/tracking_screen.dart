@@ -1,23 +1,11 @@
-import 'dart:async';
-import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 
-import '../../data/database/app_database.dart';
-import '../../data/models/trip_type.dart';
-import '../../data/providers/database_provider.dart';
+import 'providers/tracking_notifier.dart';
 
-// Tracking state providers
-final trackingStateProvider = StateProvider<TrackingState>((ref) => TrackingState.active);
-final currentSpeedProvider = StateProvider<double>((ref) => 0.0);
-final totalDistanceProvider = StateProvider<double>((ref) => 0.0);
-final elapsedTimeProvider = StateProvider<int>((ref) => 0); // seconds
-final startTimeProvider = StateProvider<int>((ref) => DateTime.now().millisecondsSinceEpoch);
-final maxSpeedProvider = StateProvider<double>((ref) => 0.0);
-
-enum TrackingState { active, paused, stopped }
+const _fallbackCenter = LatLng(0, 0);
 
 class TrackingScreen extends ConsumerStatefulWidget {
   const TrackingScreen({super.key});
@@ -28,97 +16,34 @@ class TrackingScreen extends ConsumerStatefulWidget {
 
 class _TrackingScreenState extends ConsumerState<TrackingScreen> {
   final MapController _mapController = MapController();
-  Timer? _timer;
-
-  // Simulated current location (would be from geolocator in production)
-  final LatLng _currentLocation = const LatLng(51.5074, -0.1278); // London
-  final List<LatLng> _routePoints = [];
-
-  @override
-  void initState() {
-    super.initState();
-    // Reset tracking state for new trip
-    ref.read(trackingStateProvider.notifier).state = TrackingState.active;
-    ref.read(currentSpeedProvider.notifier).state = 0.0;
-    ref.read(totalDistanceProvider.notifier).state = 0.0;
-    ref.read(elapsedTimeProvider.notifier).state = 0;
-    ref.read(startTimeProvider.notifier).state = DateTime.now().millisecondsSinceEpoch;
-    ref.read(maxSpeedProvider.notifier).state = 0.0;
-
-    _startTimer();
-    _simulateTracking();
-  }
+  LatLng? _lastCenteredPosition;
 
   @override
   void dispose() {
-    _timer?.cancel();
     _mapController.dispose();
     super.dispose();
   }
 
-  void _startTimer() {
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      final state = ref.read(trackingStateProvider);
-      if (state == TrackingState.active) {
-        ref.read(elapsedTimeProvider.notifier).state++;
-
-        // Simulate speed changes
-        final currentSpeed = ref.read(currentSpeedProvider);
-        final newSpeed = (currentSpeed + (timer.tick % 5 - 2) * 2).clamp(0, 120).toDouble();
-        ref.read(currentSpeedProvider.notifier).state = newSpeed;
-
-        // Track max speed
-        final maxSpeed = ref.read(maxSpeedProvider);
-        if (newSpeed > maxSpeed) {
-          ref.read(maxSpeedProvider.notifier).state = newSpeed;
-        }
-
-        // Simulate distance accumulation (speed in km/h converted to km per second)
-        if (newSpeed > 0) {
-          final distanceIncrement = newSpeed / 3600; // km per second
-          ref.read(totalDistanceProvider.notifier).state += distanceIncrement;
-        }
-      }
-    });
-  }
-
-  void _simulateTracking() {
-    // Add initial route points for visualization
-    _routePoints.add(_currentLocation);
-    setState(() {});
-  }
-
-  void _handlePause() {
-    final currentState = ref.read(trackingStateProvider);
-    if (currentState == TrackingState.active) {
-      ref.read(trackingStateProvider.notifier).state = TrackingState.paused;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Trip paused'), duration: Duration(seconds: 1)),
-      );
-    } else if (currentState == TrackingState.paused) {
-      ref.read(trackingStateProvider.notifier).state = TrackingState.active;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Trip resumed'), duration: Duration(seconds: 1)),
-      );
-    }
+  void _maybeRecenter(LatLng? position) {
+    if (position == null || position == _lastCenteredPosition) return;
+    _lastCenteredPosition = position;
+    _mapController.move(position, _mapController.camera.zoom);
   }
 
   Future<void> _handleStop() async {
-    showDialog(
+    final notifier = ref.read(trackingNotifierProvider.notifier);
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Stop Trip'),
         content: const Text('Are you sure you want to stop tracking?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(context).pop(false),
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () async {
-              Navigator.of(context).pop(); // Close dialog
-              await _saveTrip();
-            },
+            onPressed: () => Navigator.of(context).pop(true),
             child: Text(
               'Stop',
               style: TextStyle(color: Theme.of(context).colorScheme.error),
@@ -127,59 +52,25 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
         ],
       ),
     );
-  }
 
-  Future<void> _saveTrip() async {
+    if (confirmed != true) return;
+
     try {
-      _timer?.cancel();
-      ref.read(trackingStateProvider.notifier).state = TrackingState.stopped;
-
-      // Gather trip data
-      final startTime = ref.read(startTimeProvider);
-      final endTime = DateTime.now().millisecondsSinceEpoch;
-      final distanceKm = ref.read(totalDistanceProvider);
-      final elapsedSeconds = ref.read(elapsedTimeProvider);
-      final maxSpeed = ref.read(maxSpeedProvider);
-
-      // Calculate average speed (km/h)
-      final avgSpeedKmh = elapsedSeconds > 0
-          ? (distanceKm / elapsedSeconds) * 3600
-          : 0.0;
-
-      // Insert trip into database
-      final tripsDao = ref.read(tripsDaoProvider);
-      await tripsDao.insertTrip(
-        TripsCompanion.insert(
-          startTime: startTime,
-          endTime: Value(endTime),
-          distanceKm: Value(distanceKm),
-          maxSpeedKmh: Value(maxSpeed),
-          avgSpeedKmh: Value(avgSpeedKmh),
-          isActive: const Value(false),
-          tripType: Value(TripType.business.value),
-          startAddress: const Value(''),
-          endAddress: const Value(''),
-          companyName: const Value(''),
-          vehicleNumber: const Value(''),
-          odometerStart: const Value(0.0),
-          odometerEnd: const Value(0.0),
-          mileageRate: const Value(0.55), // Default rate
-          notes: const Value(''),
-          isSynced: const Value(false),
-          autoStarted: const Value(false),
-        ),
-      );
+      await notifier.stopAndSave();
+      final distanceKm = ref.read(trackingNotifierProvider).totalDistanceKm;
+      final elapsedSeconds = ref.read(trackingNotifierProvider).elapsedSeconds;
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Trip saved: ${distanceKm.toStringAsFixed(1)} km in ${_formatDuration(elapsedSeconds)}',
+              'Trip saved: ${distanceKm.toStringAsFixed(1)} km in '
+              '${_formatDuration(elapsedSeconds)}',
             ),
             duration: const Duration(seconds: 2),
           ),
         );
-        Navigator.of(context).pop(); // Return to previous screen
+        Navigator.of(context).pop();
       }
     } catch (e) {
       if (mounted) {
@@ -189,7 +80,7 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
-        Navigator.of(context).pop(); // Still navigate back even on error
+        Navigator.of(context).pop();
       }
     }
   }
@@ -207,22 +98,36 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final trackingState = ref.watch(trackingStateProvider);
-    final currentSpeed = ref.watch(currentSpeedProvider);
-    final totalDistance = ref.watch(totalDistanceProvider);
-    final elapsedTime = ref.watch(elapsedTimeProvider);
+    final trackingState = ref.watch(trackingNotifierProvider);
 
-    final isPaused = trackingState == TrackingState.paused;
+    ref.listen(trackingNotifierProvider, (previous, next) {
+      _maybeRecenter(next.currentPosition);
+    });
+
+    if (trackingState.status == TrackingStatus.requestingPermission) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (trackingState.status == TrackingStatus.permissionDenied ||
+        trackingState.status == TrackingStatus.serviceDisabled) {
+      return _LocationAccessError(status: trackingState.status);
+    }
+
+    final isPaused = trackingState.status == TrackingStatus.paused;
+    final routePoints = trackingState.routePoints;
+    final mapCenter = trackingState.currentPosition ??
+        (routePoints.isNotEmpty ? routePoints.last : _fallbackCenter);
 
     return Scaffold(
       body: Stack(
         children: [
-          // Full-screen map
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
-              initialCenter: _currentLocation,
-              initialZoom: 15.0,
+              initialCenter: mapCenter,
+              initialZoom: 16.0,
               minZoom: 5.0,
               maxZoom: 18.0,
             ),
@@ -231,39 +136,38 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.milelog.app',
               ),
-              // Route polyline
-              if (_routePoints.isNotEmpty)
+              if (routePoints.length > 1)
                 PolylineLayer(
                   polylines: [
                     Polyline(
-                      points: _routePoints,
+                      points: routePoints,
                       color: Theme.of(context).colorScheme.primary,
                       strokeWidth: 4,
                     ),
                   ],
                 ),
-              // Current location marker
-              MarkerLayer(
-                markers: [
-                  Marker(
-                    point: _currentLocation,
-                    width: 40,
-                    height: 40,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primary,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 3),
-                      ),
-                      child: const Icon(
-                        Icons.navigation,
-                        color: Colors.white,
-                        size: 20,
+              if (trackingState.currentPosition != null)
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: trackingState.currentPosition!,
+                      width: 40,
+                      height: 40,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primary,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 3),
+                        ),
+                        child: const Icon(
+                          Icons.navigation,
+                          color: Colors.white,
+                          size: 20,
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
             ],
           ),
 
@@ -330,7 +234,7 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                       Expanded(
                         child: _StatCard(
                           label: 'SPEED',
-                          value: currentSpeed.toStringAsFixed(0),
+                          value: trackingState.currentSpeedKmh.toStringAsFixed(0),
                           unit: 'km/h',
                           color: Theme.of(context).colorScheme.primary,
                         ),
@@ -339,7 +243,7 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                       Expanded(
                         child: _StatCard(
                           label: 'DISTANCE',
-                          value: totalDistance.toStringAsFixed(1),
+                          value: trackingState.totalDistanceKm.toStringAsFixed(1),
                           unit: 'km',
                           color: Theme.of(context).colorScheme.secondary,
                         ),
@@ -348,7 +252,7 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                       Expanded(
                         child: _StatCard(
                           label: 'TIME',
-                          value: _formatDuration(elapsedTime),
+                          value: _formatDuration(trackingState.elapsedSeconds),
                           unit: '',
                           color: Theme.of(context).colorScheme.tertiary,
                         ),
@@ -374,7 +278,27 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                           child: Material(
                             color: Colors.transparent,
                             child: InkWell(
-                              onTap: _handlePause,
+                              onTap: () {
+                                final notifier =
+                                    ref.read(trackingNotifierProvider.notifier);
+                                if (isPaused) {
+                                  notifier.resume();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Trip resumed'),
+                                      duration: Duration(seconds: 1),
+                                    ),
+                                  );
+                                } else {
+                                  notifier.pause();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Trip paused'),
+                                      duration: Duration(seconds: 1),
+                                    ),
+                                  );
+                                }
+                              },
                               borderRadius: BorderRadius.circular(12),
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
@@ -442,6 +366,56 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _LocationAccessError extends ConsumerWidget {
+  const _LocationAccessError({required this.status});
+
+  final TrackingStatus status;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final message = status == TrackingStatus.serviceDisabled
+        ? 'Location services are turned off. Enable GPS to start tracking.'
+        : 'Location permission is required to track trips.';
+
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.location_off,
+                  size: 64,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () =>
+                      ref.read(trackingNotifierProvider.notifier).retry(),
+                  child: const Text('Try Again'),
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
