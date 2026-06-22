@@ -15,5 +15,12 @@ class TripRepository {
 
   Stream<List<Trip>> watchCompletedTrips() => _tripsDao.watchCompletedTrips();
 
+  Future<Trip?> getTripById(int id) => _tripsDao.getTripById(id);
+
+  Future<void> updateTrip(TripsCompanion entry) => _tripsDao.updateTrip(entry);
+
   Future<void> deleteTrip(int id) => _tripsDao.deleteTrip(id);
+
+  Future<List<LocationPoint>> getLocationPointsForTrip(int tripId) =>
+      _tripsDao.getPointsForTrip(tripId);
 }

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/router/app_router.dart';
 import '../../../data/database/app_database.dart';
 import '../../../data/models/trip_type.dart';
 import '../providers/completed_trips_provider.dart';
@@ -178,9 +180,7 @@ class _TripCard extends StatelessWidget {
 
     return Card(
       child: InkWell(
-        onTap: () {
-          // Trip detail navigation will go here
-        },
+        onTap: () => context.push(AppRoutes.tripDetailPath(trip.id)),
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16),

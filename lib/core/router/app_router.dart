@@ -4,6 +4,7 @@ import '../../features/auth/login_screen.dart';
 import '../../features/auth/signup_screen.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/tracking/tracking_screen.dart';
+import '../../features/trips/trip_detail_screen.dart';
 
 class AppRoutes {
   static const login = '/login';
@@ -16,6 +17,8 @@ class AppRoutes {
   static const workplaces = '/workplaces';
   static const profile = '/profile';
   static const settings = '/settings';
+
+  static String tripDetailPath(int tripId) => '/trips/$tripId';
 }
 
 class AppRouter {
@@ -39,6 +42,13 @@ class AppRouter {
       GoRoute(
         path: AppRoutes.tracking,
         builder: (context, state) => const TrackingScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.tripDetail,
+        builder: (context, state) {
+          final tripId = int.parse(state.pathParameters['id']!);
+          return TripDetailScreen(tripId: tripId);
+        },
       ),
       // Additional feature routes will be added as screens are built.
     ],
