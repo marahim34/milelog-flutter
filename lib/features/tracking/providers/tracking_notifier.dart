@@ -192,7 +192,10 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
   /// Stops GPS updates and persists the trip via [TripRepository], using
   /// the distance recomputed from the full point list (not the live running
   /// total) as the authoritative value.
-  Future<void> stopAndSave() async {
+  Future<void> stopAndSave({
+    required TripType tripType,
+    required String companyName,
+  }) async {
     _elapsedTimer?.cancel();
     await _locationService.stop();
     if (_disposed) return;
@@ -217,10 +220,10 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
         maxSpeedKmh: Value(_locationService.maxSpeedKmh),
         avgSpeedKmh: Value(avgSpeedKmh),
         isActive: const Value(false),
-        tripType: Value(TripType.business.value),
+        tripType: Value(tripType.value),
         startAddress: const Value(''),
         endAddress: const Value(''),
-        companyName: const Value(''),
+        companyName: Value(companyName),
         vehicleNumber: const Value(''),
         odometerStart: const Value(0.0),
         odometerEnd: const Value(0.0),

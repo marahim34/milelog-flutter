@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../data/models/trip_type.dart';
 import 'providers/tracking_notifier.dart';
 
 const _fallbackCenter = LatLng(0, 0);
@@ -32,31 +33,18 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
 
   Future<void> _handleStop() async {
     final notifier = ref.read(trackingNotifierProvider.notifier);
-    final confirmed = await showDialog<bool>(
+    final result = await showDialog<_StopTripResult>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Stop Trip'),
-        content: const Text('Are you sure you want to stop tracking?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(
-              'Stop',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          ),
-        ],
-      ),
+      builder: (context) => const _StopTripDialog(),
     );
 
-    if (confirmed != true) return;
+    if (result == null) return;
 
     try {
-      await notifier.stopAndSave();
+      await notifier.stopAndSave(
+        tripType: result.tripType,
+        companyName: result.companyName,
+      );
       final distanceKm = ref.read(trackingNotifierProvider).totalDistanceKm;
       final elapsedSeconds = ref.read(trackingNotifierProvider).elapsedSeconds;
 
@@ -367,6 +355,99 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _StopTripResult {
+  const _StopTripResult({required this.tripType, required this.companyName});
+
+  final TripType tripType;
+  final String companyName;
+}
+
+class _StopTripDialog extends StatefulWidget {
+  const _StopTripDialog();
+
+  @override
+  State<_StopTripDialog> createState() => _StopTripDialogState();
+}
+
+class _StopTripDialogState extends State<_StopTripDialog> {
+  TripType _tripType = TripType.business;
+  final _companyController = TextEditingController();
+
+  @override
+  void dispose() {
+    _companyController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Stop Trip'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Are you sure you want to stop tracking?'),
+          const SizedBox(height: 16),
+          Text(
+            'Trip type',
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: Colors.grey,
+                ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: ChoiceChip(
+                  label: const Text('Business'),
+                  selected: _tripType == TripType.business,
+                  onSelected: (_) =>
+                      setState(() => _tripType = TripType.business),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ChoiceChip(
+                  label: const Text('Personal'),
+                  selected: _tripType == TripType.personal,
+                  onSelected: (_) =>
+                      setState(() => _tripType = TripType.personal),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _companyController,
+            decoration: const InputDecoration(
+              labelText: 'Company name (optional)',
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(
+            _StopTripResult(
+              tripType: _tripType,
+              companyName: _companyController.text.trim(),
+            ),
+          ),
+          child: Text(
+            'Stop',
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ),
+      ],
     );
   }
 }

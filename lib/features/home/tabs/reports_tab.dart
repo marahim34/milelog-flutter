@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../data/database/app_database.dart';
 import '../../../data/models/trip_type.dart';
+import '../../reports/services/report_export_service.dart';
 import '../providers/completed_trips_provider.dart';
 
 enum ReportPeriod { monthly, allTime }
@@ -96,16 +97,55 @@ class ReportsTab extends ConsumerStatefulWidget {
 }
 
 class _ReportsTabState extends ConsumerState<ReportsTab> {
-  void _handleExportPDF() {
+  final _exportService = ReportExportService();
+
+  Future<void> _handleExportPDF(List<Trip> trips, String periodLabel) async {
+    if (trips.isEmpty) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Exporting PDF...')),
     );
+    try {
+      final file = await _exportService.exportPdf(
+        trips: trips,
+        periodLabel: periodLabel,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('PDF saved to ${file.path}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('PDF export failed: $e'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
   }
 
-  void _handleExportCSV() {
+  Future<void> _handleExportCSV(List<Trip> trips) async {
+    if (trips.isEmpty) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Exporting CSV...')),
     );
+    try {
+      final file = await _exportService.exportCsv(trips: trips);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('CSV saved to ${file.path}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('CSV export failed: $e'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
   }
 
   (int, int) _getCurrentMonthRange() {
@@ -332,7 +372,10 @@ class _ReportsTabState extends ConsumerState<ReportsTab> {
                     const SizedBox(height: 16),
 
                     ElevatedButton.icon(
-                      onPressed: _handleExportPDF,
+                      onPressed: () => _handleExportPDF(
+                        filteredTrips,
+                        isMonthly ? _getCurrentMonthName() : 'All Time Summary',
+                      ),
                       icon: const Icon(Icons.picture_as_pdf),
                       label: const Text('Export as PDF'),
                       style: ElevatedButton.styleFrom(
@@ -342,7 +385,7 @@ class _ReportsTabState extends ConsumerState<ReportsTab> {
                     const SizedBox(height: 12),
 
                     OutlinedButton.icon(
-                      onPressed: _handleExportCSV,
+                      onPressed: () => _handleExportCSV(filteredTrips),
                       icon: const Icon(Icons.table_chart),
                       label: const Text('Export as CSV'),
                       style: OutlinedButton.styleFrom(
