@@ -82,6 +82,7 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
   late final LocationTrackingService _locationService;
   Timer? _elapsedTimer;
   StreamSubscription<Position>? _positionSub;
+  StreamSubscription<TrackedPoint>? _trackedPointSub;
   StreamSubscription<double>? _speedSub;
   StreamSubscription<double>? _distanceSub;
   bool _disposed = false;
@@ -93,6 +94,7 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
       _disposed = true;
       _elapsedTimer?.cancel();
       _positionSub?.cancel();
+      _trackedPointSub?.cancel();
       _speedSub?.cancel();
       _distanceSub?.cancel();
       _locationService.dispose();
@@ -118,7 +120,9 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
     await _locationService.start();
     if (_disposed) return;
 
-    _positionSub = _locationService.positionStream.listen(_onPosition);
+    _positionSub = _locationService.positionStream.listen(_onRawPosition);
+    _trackedPointSub =
+        _locationService.trackedPointStream.listen(_onTrackedPoint);
     _speedSub = _locationService.speedStream.listen((speedKmh) {
       state = state.copyWith(
         currentSpeedKmh: speedKmh,
@@ -141,11 +145,23 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
   /// [TrackingStatus.serviceDisabled].
   Future<void> retry() => _initialize();
 
-  void _onPosition(Position position) {
-    final point = LatLng(position.latitude, position.longitude);
+  /// Updates the live marker position. Raw fixes can be noisy, so this must
+  /// not feed the route polyline — see [_onTrackedPoint].
+  void _onRawPosition(Position position) {
     state = state.copyWith(
-      currentPosition: point,
-      routePoints: [...state.routePoints, point],
+      currentPosition: LatLng(position.latitude, position.longitude),
+    );
+  }
+
+  /// Appends a point that passed [LocationTrackingService]'s accuracy
+  /// filter to the route — the same points the live/final distance is
+  /// computed from, so the drawn route and the distance never disagree.
+  void _onTrackedPoint(TrackedPoint point) {
+    state = state.copyWith(
+      routePoints: [
+        ...state.routePoints,
+        LatLng(point.latitude, point.longitude),
+      ],
     );
   }
 

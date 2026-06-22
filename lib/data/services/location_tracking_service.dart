@@ -50,8 +50,10 @@ class LocationTrackingService {
   final _positionController = StreamController<Position>.broadcast();
   final _speedController = StreamController<double>.broadcast();
   final _distanceController = StreamController<double>.broadcast();
+  final _trackedPointController = StreamController<TrackedPoint>.broadcast();
 
-  /// Raw position updates — used to move the map camera/marker.
+  /// Raw position updates — used to move the map camera/marker. Includes
+  /// noisy/low-accuracy fixes, so it must not be used to draw the route.
   Stream<Position> get positionStream => _positionController.stream;
 
   /// Current speed in km/h, derived from the platform's reported speed.
@@ -60,6 +62,10 @@ class LocationTrackingService {
   /// Running total distance in km. For live display only — see
   /// [calculateTotalDistance] for the authoritative value.
   Stream<double> get distanceStream => _distanceController.stream;
+
+  /// Points that passed the accuracy filter and were appended to [points] —
+  /// i.e. exactly the points the route polyline and distance are built from.
+  Stream<TrackedPoint> get trackedPointStream => _trackedPointController.stream;
 
   List<TrackedPoint> get points => List.unmodifiable(_points);
 
@@ -174,6 +180,7 @@ class LocationTrackingService {
     }
 
     _points.add(point);
+    _trackedPointController.add(point);
     _speedController.add(speedKmh);
     _distanceController.add(_totalDistanceKm);
   }
@@ -183,6 +190,7 @@ class LocationTrackingService {
     await _positionController.close();
     await _speedController.close();
     await _distanceController.close();
+    await _trackedPointController.close();
   }
 
   static double _haversineKm(
