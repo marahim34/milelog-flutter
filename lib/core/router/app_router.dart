@@ -5,6 +5,8 @@ import '../../features/auth/signup_screen.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/tracking/tracking_screen.dart';
 import '../../features/trips/trip_detail_screen.dart';
+import '../../features/vehicles/add_edit_vehicle_screen.dart';
+import '../../features/vehicles/vehicles_screen.dart';
 
 class AppRoutes {
   static const login = '/login';
@@ -14,11 +16,14 @@ class AppRoutes {
   static const tripDetail = '/trips/:id';
   static const reports = '/reports';
   static const vehicles = '/vehicles';
+  static const vehicleNew = '/vehicles/new';
+  static const vehicleEdit = '/vehicles/:id/edit';
   static const workplaces = '/workplaces';
   static const profile = '/profile';
   static const settings = '/settings';
 
   static String tripDetailPath(int tripId) => '/trips/$tripId';
+  static String vehicleEditPath(int vehicleId) => '/vehicles/$vehicleId/edit';
 }
 
 class AppRouter {
@@ -48,6 +53,21 @@ class AppRouter {
         builder: (context, state) {
           final tripId = int.parse(state.pathParameters['id']!);
           return TripDetailScreen(tripId: tripId);
+        },
+      ),
+      GoRoute(
+        path: AppRoutes.vehicles,
+        builder: (context, state) => const VehiclesScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.vehicleNew,
+        builder: (context, state) => const AddEditVehicleScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.vehicleEdit,
+        builder: (context, state) {
+          final vehicleId = int.parse(state.pathParameters['id']!);
+          return AddEditVehicleScreen(vehicleId: vehicleId);
         },
       ),
       // Additional feature routes will be added as screens are built.

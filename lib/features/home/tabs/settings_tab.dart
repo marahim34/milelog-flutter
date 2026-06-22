@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../../core/router/app_router.dart';
 
 final highAccuracyGPSProvider = StateProvider<bool>((ref) => true);
 final idleDetectionProvider = StateProvider<bool>((ref) => true);
@@ -13,10 +16,7 @@ class SettingsTab extends ConsumerStatefulWidget {
 
 class _SettingsTabState extends ConsumerState<SettingsTab> {
   void _handleVehiclesNavigation() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Navigating to Vehicles...')),
-    );
-    // Navigation will be implemented with go_router
+    context.push(AppRoutes.vehicles);
   }
 
   void _handleWorkplacesNavigation() {
