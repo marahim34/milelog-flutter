@@ -7,6 +7,8 @@ import '../../features/tracking/tracking_screen.dart';
 import '../../features/trips/trip_detail_screen.dart';
 import '../../features/vehicles/add_edit_vehicle_screen.dart';
 import '../../features/vehicles/vehicles_screen.dart';
+import '../../features/workplaces/add_edit_workplace_screen.dart';
+import '../../features/workplaces/workplaces_screen.dart';
 
 class AppRoutes {
   static const login = '/login';
@@ -19,11 +21,15 @@ class AppRoutes {
   static const vehicleNew = '/vehicles/new';
   static const vehicleEdit = '/vehicles/:id/edit';
   static const workplaces = '/workplaces';
+  static const workplaceNew = '/workplaces/new';
+  static const workplaceEdit = '/workplaces/:id/edit';
   static const profile = '/profile';
   static const settings = '/settings';
 
   static String tripDetailPath(int tripId) => '/trips/$tripId';
   static String vehicleEditPath(int vehicleId) => '/vehicles/$vehicleId/edit';
+  static String workplaceEditPath(int workplaceId) =>
+      '/workplaces/$workplaceId/edit';
 }
 
 class AppRouter {
@@ -68,6 +74,21 @@ class AppRouter {
         builder: (context, state) {
           final vehicleId = int.parse(state.pathParameters['id']!);
           return AddEditVehicleScreen(vehicleId: vehicleId);
+        },
+      ),
+      GoRoute(
+        path: AppRoutes.workplaces,
+        builder: (context, state) => const WorkplacesScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.workplaceNew,
+        builder: (context, state) => const AddEditWorkplaceScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.workplaceEdit,
+        builder: (context, state) {
+          final workplaceId = int.parse(state.pathParameters['id']!);
+          return AddEditWorkplaceScreen(workplaceId: workplaceId);
         },
       ),
       // Additional feature routes will be added as screens are built.

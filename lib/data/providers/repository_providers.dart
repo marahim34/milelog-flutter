@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../repositories/trip_repository.dart';
 import '../repositories/vehicle_repository.dart';
+import '../repositories/workplace_repository.dart';
 import 'database_provider.dart';
 
 /// Repository providers sit between DAO providers and feature Notifiers.
@@ -11,4 +12,8 @@ final tripRepositoryProvider = Provider<TripRepository>(
 
 final vehicleRepositoryProvider = Provider<VehicleRepository>(
   (ref) => VehicleRepository(ref.watch(vehiclesDaoProvider)),
+);
+
+final workplaceRepositoryProvider = Provider<WorkplaceRepository>(
+  (ref) => WorkplaceRepository(ref.watch(workPlacesDaoProvider)),
 );

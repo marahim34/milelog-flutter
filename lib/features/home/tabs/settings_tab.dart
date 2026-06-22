@@ -20,10 +20,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
   }
 
   void _handleWorkplacesNavigation() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Navigating to Workplaces...')),
-    );
-    // Navigation will be implemented with go_router
+    context.push(AppRoutes.workplaces);
   }
 
   void _handleExportData() {

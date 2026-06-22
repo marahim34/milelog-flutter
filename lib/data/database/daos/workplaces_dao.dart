@@ -12,6 +12,9 @@ class WorkPlacesDao extends DatabaseAccessor<AppDatabase> with _$WorkPlacesDaoMi
 
   Future<List<WorkPlace>> getAll() => select(workPlaces).get();
 
+  Future<WorkPlace?> getById(int id) =>
+      (select(workPlaces)..where((w) => w.id.equals(id))).getSingleOrNull();
+
   Future<WorkPlace?> getHome() =>
       (select(workPlaces)..where((w) => w.isHome.equals(true))).getSingleOrNull();
 
@@ -26,4 +29,8 @@ class WorkPlacesDao extends DatabaseAccessor<AppDatabase> with _$WorkPlacesDaoMi
 
   Future<void> deleteById(int id) =>
       (delete(workPlaces)..where((w) => w.id.equals(id))).go();
+
+  /// Clears isHome on all workplaces — call before setting a new one as home.
+  Future<void> clearHome() =>
+      update(workPlaces).write(const WorkPlacesCompanion(isHome: Value(false)));
 }
