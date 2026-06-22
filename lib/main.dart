@@ -4,16 +4,18 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app.dart';
+import 'data/services/background_tracking_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Portrait lock only works on mobile platforms
+  // Portrait lock and the background tracking service only apply on mobile.
   if (!kIsWeb) {
     await SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
     ]);
+    await BackgroundTrackingService.initialize();
   }
 
   runApp(

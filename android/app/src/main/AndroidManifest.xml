@@ -1,10 +1,25 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+
+    <!-- Background tracking: keeps the process alive (via a foreground
+         service) so GPS collection survives the screen locking or the app
+         being minimized. FOREGROUND_SERVICE/RECEIVE_BOOT_COMPLETED/WAKE_LOCK
+         and the service/receiver declarations themselves come from the
+         flutter_background_service plugin's own manifest and are merged in
+         automatically — only the location-type and notification permissions
+         need declaring here. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
     <application
         android:label="milelog_flutter"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <service
+            android:name="id.flutter.flutter_background_service.BackgroundService"
+            android:foregroundServiceType="location"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"

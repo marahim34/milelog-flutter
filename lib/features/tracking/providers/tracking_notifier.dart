@@ -8,6 +8,7 @@ import 'package:latlong2/latlong.dart';
 import '../../../data/database/app_database.dart';
 import '../../../data/models/trip_type.dart';
 import '../../../data/providers/repository_providers.dart';
+import '../../../data/services/background_tracking_service.dart';
 import '../../../data/services/location_tracking_service.dart';
 
 enum TrackingStatus {
@@ -98,6 +99,7 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
       _speedSub?.cancel();
       _distanceSub?.cancel();
       _locationService.dispose();
+      unawaited(BackgroundTrackingService.stop());
     });
     unawaited(_initialize());
     return TrackingViewState.initial();
@@ -116,6 +118,9 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
       status: TrackingStatus.active,
       startTimeMs: DateTime.now().millisecondsSinceEpoch,
     );
+
+    await BackgroundTrackingService.start();
+    if (_disposed) return;
 
     await _locationService.start();
     if (_disposed) return;
@@ -137,6 +142,10 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
       if (state.status == TrackingStatus.active) {
         state = state.copyWith(elapsedSeconds: state.elapsedSeconds + 1);
       }
+      unawaited(BackgroundTrackingService.updateNotification(
+        distanceKm: state.totalDistanceKm,
+        elapsedSeconds: state.elapsedSeconds,
+      ));
     });
   }
 
@@ -198,6 +207,7 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
   }) async {
     _elapsedTimer?.cancel();
     await _locationService.stop();
+    await BackgroundTrackingService.stop();
     if (_disposed) return;
 
     final distanceKm = _locationService.calculateTotalDistance();
