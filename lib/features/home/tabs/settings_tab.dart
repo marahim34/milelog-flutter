@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_router.dart';
+import '../../../data/services/session_service.dart';
 
 final highAccuracyGPSProvider = StateProvider<bool>((ref) => true);
 final idleDetectionProvider = StateProvider<bool>((ref) => true);
@@ -53,12 +54,11 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.of(context).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Signing out...')),
-              );
-              // Sign out logic will go here
+              await SessionService.setLoggedIn(false);
+              AppRouter.session.isLoggedIn = false;
+              if (context.mounted) context.go(AppRoutes.login);
             },
             child: Text(
               'Sign Out',
@@ -99,7 +99,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                     children: [
                       CircleAvatar(
                         radius: 32,
-                        backgroundColor: Theme.of(context).colorScheme.primary.withAlpha(30),
+                        backgroundColor:
+                            Theme.of(context).colorScheme.primary.withAlpha(30),
                         child: Icon(
                           Icons.person,
                           size: 32,
@@ -113,14 +114,20 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                           children: [
                             Text(
                               'John Doe',
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(
                                     fontWeight: FontWeight.bold,
                                   ),
                             ),
                             const SizedBox(height: 4),
                             Text(
                               'marahim34@gmail.com',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(
                                     color: Colors.grey,
                                   ),
                             ),
@@ -153,7 +160,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                       icon: Icons.gps_fixed,
                       value: highAccuracyGPS,
                       onChanged: (value) {
-                        ref.read(highAccuracyGPSProvider.notifier).state = value;
+                        ref.read(highAccuracyGPSProvider.notifier).state =
+                            value;
                       },
                     ),
                     Divider(

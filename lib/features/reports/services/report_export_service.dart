@@ -7,30 +7,32 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:share_plus/share_plus.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../data/database/app_database.dart';
 import '../../../data/models/trip_type.dart';
 
-/// Generates and saves PDF/CSV trip exports for the Reports tab.
+/// Generates PDF/CSV trip exports and hands them to the OS share sheet.
 ///
-/// Tries the device's public Downloads folder first; on platforms or
-/// Android versions where scoped storage blocks a direct write there, it
-/// falls back to the app's own external-storage directory (no runtime
-/// permission required) so the export never silently fails. The returned
-/// [File] always reflects where the export actually landed.
+/// Android's scoped storage (10+) blocks apps from writing directly into
+/// the public Downloads folder — `path_provider`'s directories are all
+/// app-private, so a direct file write "succeeds" but lands somewhere the
+/// user can never browse to. Routing through `share_plus` lets the user
+/// pick Drive/Downloads/email themselves via the native share sheet, which
+/// also happens to be the only correct way to save a file on iOS.
 class ReportExportService {
-  Future<File> exportPdf({
+  Future<void> exportPdf({
     required List<Trip> trips,
     required String periodLabel,
   }) async {
     final bytes = await _buildPdfBytes(trips: trips, periodLabel: periodLabel);
-    return _saveFile('MileLog_Report_${_timestamp()}.pdf', bytes);
+    await _share('MileLog_Report_${_timestamp()}.pdf', bytes);
   }
 
-  Future<File> exportCsv({required List<Trip> trips}) async {
+  Future<void> exportCsv({required List<Trip> trips}) async {
     final bytes = _buildCsvBytes(trips);
-    return _saveFile('MileLog_Export_${_timestamp()}.csv', bytes);
+    await _share('MileLog_Export_${_timestamp()}.csv', bytes);
   }
 
   Future<Uint8List> _buildPdfBytes({
@@ -207,32 +209,10 @@ class ReportExportService {
 
   String _timestamp() => DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
 
-  Future<File> _saveFile(String fileName, List<int> bytes) async {
-    final downloadsDir = await _tryGetDownloadsDirectory();
-    if (downloadsDir != null) {
-      try {
-        final file = File('${downloadsDir.path}/$fileName');
-        await file.writeAsBytes(bytes, flush: true);
-        return file;
-      } catch (_) {
-        // Scoped storage (Android 10+) or platform sandboxing can block a
-        // direct write to the public Downloads folder — fall back below
-        // instead of failing the export outright.
-      }
-    }
-
-    final fallbackDir =
-        await getExternalStorageDirectory() ?? await getApplicationDocumentsDirectory();
-    final file = File('${fallbackDir.path}/$fileName');
+  Future<void> _share(String fileName, List<int> bytes) async {
+    final tempDir = await getTemporaryDirectory();
+    final file = File('${tempDir.path}/$fileName');
     await file.writeAsBytes(bytes, flush: true);
-    return file;
-  }
-
-  Future<Directory?> _tryGetDownloadsDirectory() async {
-    try {
-      return await getDownloadsDirectory();
-    } catch (_) {
-      return null;
-    }
+    await Share.shareXFiles([XFile(file.path)], subject: fileName);
   }
 }

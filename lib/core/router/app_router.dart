@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/auth/login_screen.dart';
@@ -32,11 +33,37 @@ class AppRoutes {
       '/workplaces/$workplaceId/edit';
 }
 
+/// Tracks login state so [AppRouter.router]'s redirect can react to it.
+/// Must be assigned (see `main.dart`) before [AppRouter.router] is first
+/// accessed, since the redirect/refreshListenable wiring captures it.
+class SessionListenable extends ChangeNotifier {
+  SessionListenable(this._isLoggedIn);
+
+  bool _isLoggedIn;
+  bool get isLoggedIn => _isLoggedIn;
+  set isLoggedIn(bool value) {
+    if (_isLoggedIn == value) return;
+    _isLoggedIn = value;
+    notifyListeners();
+  }
+}
+
 class AppRouter {
   AppRouter._();
 
+  static late SessionListenable session;
+
   static final router = GoRouter(
-    initialLocation: AppRoutes.login,
+    initialLocation: AppRoutes.home,
+    refreshListenable: session,
+    redirect: (context, state) {
+      final loggedIn = session.isLoggedIn;
+      final onAuthPage = state.matchedLocation == AppRoutes.login ||
+          state.matchedLocation == AppRoutes.signup;
+      if (!loggedIn && !onAuthPage) return AppRoutes.login;
+      if (loggedIn && onAuthPage) return AppRoutes.home;
+      return null;
+    },
     routes: [
       GoRoute(
         path: AppRoutes.login,
@@ -93,6 +120,5 @@ class AppRouter {
       ),
       // Additional feature routes will be added as screens are built.
     ],
-    // TODO: add redirect guard once auth state provider is in place.
   );
 }

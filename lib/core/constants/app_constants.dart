@@ -26,7 +26,6 @@ class AppConstants {
   static const int trackingNotificationId = 1001;
   static const int idleWarningNotificationId = 1002;
   static const int gpsLossNotificationId = 1003;
-  static const String trackingNotificationChannelId = 'milelog_tracking';
 
   // ── Mileage defaults ───────────────────────────────────────────────────
   static const double defaultMileageRate = 0.55;

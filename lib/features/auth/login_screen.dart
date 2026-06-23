@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/router/app_router.dart';
+import '../../data/services/session_service.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -23,13 +24,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
-  void _handleLogin() {
+  Future<void> _handleLogin() async {
     if (_formKey.currentState?.validate() ?? false) {
-      final email = _emailController.text.trim();
-      final password = _passwordController.text.trim();
       // Firebase auth will go here
-      // For now, just navigate to home
-      context.go(AppRoutes.home);
+      await SessionService.setLoggedIn(true);
+      AppRouter.session.isLoggedIn = true;
+      if (mounted) context.go(AppRoutes.home);
     }
   }
 

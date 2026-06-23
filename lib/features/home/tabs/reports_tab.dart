@@ -102,18 +102,8 @@ class _ReportsTabState extends ConsumerState<ReportsTab> {
   Future<void> _handleExportPDF(List<Trip> trips, String periodLabel) async {
     if (trips.isEmpty) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Exporting PDF...')),
-    );
     try {
-      final file = await _exportService.exportPdf(
-        trips: trips,
-        periodLabel: periodLabel,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('PDF saved to ${file.path}')),
-      );
+      await _exportService.exportPdf(trips: trips, periodLabel: periodLabel);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -128,15 +118,8 @@ class _ReportsTabState extends ConsumerState<ReportsTab> {
   Future<void> _handleExportCSV(List<Trip> trips) async {
     if (trips.isEmpty) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Exporting CSV...')),
-    );
     try {
-      final file = await _exportService.exportCsv(trips: trips);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('CSV saved to ${file.path}')),
-      );
+      await _exportService.exportCsv(trips: trips);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

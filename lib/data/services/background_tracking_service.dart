@@ -35,7 +35,6 @@ class BackgroundTrackingService {
         autoStart: false,
         autoStartOnBoot: false,
         isForegroundMode: true,
-        notificationChannelId: AppConstants.trackingNotificationChannelId,
         initialNotificationTitle: 'MileLog',
         initialNotificationContent: 'Preparing to track your trip…',
         foregroundServiceNotificationId: AppConstants.trackingNotificationId,

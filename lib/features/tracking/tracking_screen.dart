@@ -18,6 +18,9 @@ class TrackingScreen extends ConsumerStatefulWidget {
 class _TrackingScreenState extends ConsumerState<TrackingScreen> {
   final MapController _mapController = MapController();
   LatLng? _lastCenteredPosition;
+  // Flips to true only right before the deliberate pop after a save (or
+  // save error) completes, so PopScope lets that single pop through.
+  bool _readyToPop = false;
 
   @override
   void dispose() {
@@ -58,6 +61,7 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
             duration: const Duration(seconds: 2),
           ),
         );
+        setState(() => _readyToPop = true);
         Navigator.of(context).pop();
       }
     } catch (e) {
@@ -68,6 +72,7 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
+        setState(() => _readyToPop = true);
         Navigator.of(context).pop();
       }
     }
@@ -108,252 +113,273 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
     final mapCenter = trackingState.currentPosition ??
         (routePoints.isNotEmpty ? routePoints.last : _fallbackCenter);
 
-    return Scaffold(
-      body: Stack(
-        children: [
-          FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: mapCenter,
-              initialZoom: 16.0,
-              minZoom: 5.0,
-              maxZoom: 18.0,
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.milelog.app',
+    return PopScope(
+      canPop: _readyToPop,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _handleStop();
+      },
+      child: Scaffold(
+        body: Stack(
+          children: [
+            FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: mapCenter,
+                initialZoom: 16.0,
+                minZoom: 5.0,
+                maxZoom: 18.0,
               ),
-              if (routePoints.length > 1)
-                PolylineLayer(
-                  polylines: [
-                    Polyline(
-                      points: routePoints,
-                      color: Theme.of(context).colorScheme.primary,
-                      strokeWidth: 4,
-                    ),
-                  ],
-                ),
-              if (trackingState.currentPosition != null)
-                MarkerLayer(
-                  markers: [
-                    Marker(
-                      point: trackingState.currentPosition!,
-                      width: 40,
-                      height: 40,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primary,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 3),
-                        ),
-                        child: const Icon(
-                          Icons.navigation,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-            ],
-          ),
-
-          // Top overlay with stats
-          SafeArea(
-            child: Column(
               children: [
-                // Header with back button
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.black.withAlpha(178),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: IconButton(
-                          icon: const Icon(Icons.arrow_back, color: Colors.white),
-                          onPressed: _handleStop,
-                        ),
-                      ),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isPaused
-                              ? Theme.of(context).colorScheme.error.withAlpha(178)
-                              : Theme.of(context).colorScheme.primary.withAlpha(178),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              isPaused ? Icons.pause : Icons.fiber_manual_record,
-                              color: Colors.white,
-                              size: 16,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              isPaused ? 'PAUSED' : 'TRACKING',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.milelog.app',
+                ),
+                if (routePoints.length > 1)
+                  PolylineLayer(
+                    polylines: [
+                      Polyline(
+                        points: routePoints,
+                        color: Theme.of(context).colorScheme.primary,
+                        strokeWidth: 4,
                       ),
                     ],
                   ),
-                ),
-
-                // Stats cards
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _StatCard(
-                          label: 'SPEED',
-                          value: trackingState.currentSpeedKmh.toStringAsFixed(0),
-                          unit: 'km/h',
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _StatCard(
-                          label: 'DISTANCE',
-                          value: trackingState.totalDistanceKm.toStringAsFixed(1),
-                          unit: 'km',
-                          color: Theme.of(context).colorScheme.secondary,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _StatCard(
-                          label: 'TIME',
-                          value: _formatDuration(trackingState.elapsedSeconds),
-                          unit: '',
-                          color: Theme.of(context).colorScheme.tertiary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Spacer(),
-
-                // Bottom control buttons
-                Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        flex: 2,
+                if (trackingState.currentPosition != null)
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: trackingState.currentPosition!,
+                        width: 40,
+                        height: 40,
                         child: Container(
-                          height: 64,
                           decoration: BoxDecoration(
-                            color: Colors.black.withAlpha(178),
-                            borderRadius: BorderRadius.circular(12),
+                            color: Theme.of(context).colorScheme.primary,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 3),
                           ),
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: () {
-                                final notifier =
-                                    ref.read(trackingNotifierProvider.notifier);
-                                if (isPaused) {
-                                  notifier.resume();
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Trip resumed'),
-                                      duration: Duration(seconds: 1),
-                                    ),
-                                  );
-                                } else {
-                                  notifier.pause();
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Trip paused'),
-                                      duration: Duration(seconds: 1),
-                                    ),
-                                  );
-                                }
-                              },
-                              borderRadius: BorderRadius.circular(12),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    isPaused ? Icons.play_arrow : Icons.pause,
-                                    color: Colors.white,
-                                    size: 32,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    isPaused ? 'RESUME' : 'PAUSE',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Container(
-                          height: 64,
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.error.withAlpha(178),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: _handleStop,
-                              borderRadius: BorderRadius.circular(12),
-                              child: const Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.stop,
-                                    color: Colors.white,
-                                    size: 28,
-                                  ),
-                                  SizedBox(height: 2),
-                                  Text(
-                                    'STOP',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                          child: const Icon(
+                            Icons.navigation,
+                            color: Colors.white,
+                            size: 20,
                           ),
                         ),
                       ),
                     ],
                   ),
-                ),
               ],
             ),
-          ),
-        ],
+
+            // Top overlay with stats
+            SafeArea(
+              child: Column(
+                children: [
+                  // Header with back button
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withAlpha(178),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: IconButton(
+                            icon: const Icon(Icons.arrow_back,
+                                color: Colors.white),
+                            onPressed: _handleStop,
+                          ),
+                        ),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isPaused
+                                ? Theme.of(context)
+                                    .colorScheme
+                                    .error
+                                    .withAlpha(178)
+                                : Theme.of(context)
+                                    .colorScheme
+                                    .primary
+                                    .withAlpha(178),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                isPaused
+                                    ? Icons.pause
+                                    : Icons.fiber_manual_record,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                isPaused ? 'PAUSED' : 'TRACKING',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Stats cards
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _StatCard(
+                            label: 'SPEED',
+                            value: trackingState.currentSpeedKmh
+                                .toStringAsFixed(0),
+                            unit: 'km/h',
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _StatCard(
+                            label: 'DISTANCE',
+                            value: trackingState.totalDistanceKm
+                                .toStringAsFixed(1),
+                            unit: 'km',
+                            color: Theme.of(context).colorScheme.secondary,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _StatCard(
+                            label: 'TIME',
+                            value:
+                                _formatDuration(trackingState.elapsedSeconds),
+                            unit: '',
+                            color: Theme.of(context).colorScheme.tertiary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Spacer(),
+
+                  // Bottom control buttons
+                  Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: Container(
+                            height: 64,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withAlpha(178),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: () {
+                                  final notifier = ref
+                                      .read(trackingNotifierProvider.notifier);
+                                  if (isPaused) {
+                                    notifier.resume();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Trip resumed'),
+                                        duration: Duration(seconds: 1),
+                                      ),
+                                    );
+                                  } else {
+                                    notifier.pause();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Trip paused'),
+                                        duration: Duration(seconds: 1),
+                                      ),
+                                    );
+                                  }
+                                },
+                                borderRadius: BorderRadius.circular(12),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      isPaused ? Icons.play_arrow : Icons.pause,
+                                      color: Colors.white,
+                                      size: 32,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      isPaused ? 'RESUME' : 'PAUSE',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Container(
+                            height: 64,
+                            decoration: BoxDecoration(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .error
+                                  .withAlpha(178),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: _handleStop,
+                                borderRadius: BorderRadius.circular(12),
+                                child: const Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.stop,
+                                      color: Colors.white,
+                                      size: 28,
+                                    ),
+                                    SizedBox(height: 2),
+                                    Text(
+                                      'STOP',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
