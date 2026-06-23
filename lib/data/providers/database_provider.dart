@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../database/app_database.dart';
+import '../managers/odometer_manager.dart';
 
 /// Single database instance for the app lifetime.
 /// Disposed (connection closed) when the ProviderScope is destroyed.
@@ -31,4 +32,11 @@ final workPlacesDaoProvider = Provider<WorkPlacesDao>(
 
 final waypointsDaoProvider = Provider<WaypointsDao>(
   (ref) => ref.watch(databaseProvider).waypointsDao,
+);
+
+final odometerManagerProvider = Provider<OdometerManager>(
+  (ref) => OdometerManager(
+    ref.watch(vehiclesDaoProvider),
+    ref.watch(tripsDaoProvider),
+  ),
 );

@@ -3,7 +3,9 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../data/database/app_database.dart';
 import '../../data/models/trip_type.dart';
+import '../vehicles/providers/vehicles_list_provider.dart';
 import 'providers/tracking_notifier.dart';
 
 const _fallbackCenter = LatLng(0, 0);
@@ -47,6 +49,7 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
       await notifier.stopAndSave(
         tripType: result.tripType,
         companyName: result.companyName,
+        vehicleNumber: result.vehicleNumber,
       );
       final distanceKm = ref.read(trackingNotifierProvider).totalDistanceKm;
       final elapsedSeconds = ref.read(trackingNotifierProvider).elapsedSeconds;
@@ -386,22 +389,29 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
 }
 
 class _StopTripResult {
-  const _StopTripResult({required this.tripType, required this.companyName});
+  const _StopTripResult({
+    required this.tripType,
+    required this.companyName,
+    required this.vehicleNumber,
+  });
 
   final TripType tripType;
   final String companyName;
+  final String vehicleNumber;
 }
 
-class _StopTripDialog extends StatefulWidget {
+class _StopTripDialog extends ConsumerStatefulWidget {
   const _StopTripDialog();
 
   @override
-  State<_StopTripDialog> createState() => _StopTripDialogState();
+  ConsumerState<_StopTripDialog> createState() => _StopTripDialogState();
 }
 
-class _StopTripDialogState extends State<_StopTripDialog> {
+class _StopTripDialogState extends ConsumerState<_StopTripDialog> {
   TripType _tripType = TripType.business;
   final _companyController = TextEditingController();
+  int? _selectedVehicleId;
+  bool _defaultVehicleApplied = false;
 
   @override
   void dispose() {
@@ -409,52 +419,101 @@ class _StopTripDialogState extends State<_StopTripDialog> {
     super.dispose();
   }
 
+  Vehicle? _defaultVehicleOf(List<Vehicle> vehicles) {
+    for (final vehicle in vehicles) {
+      if (vehicle.isDefault) return vehicle;
+    }
+    return null;
+  }
+
+  String _plateNumberOf(List<Vehicle> vehicles, int? vehicleId) {
+    if (vehicleId == null) return '';
+    for (final vehicle in vehicles) {
+      if (vehicle.id == vehicleId) return vehicle.plateNumber;
+    }
+    return '';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final vehicles = ref.watch(vehiclesListProvider).value ?? const <Vehicle>[];
+
+    // Pre-select the default vehicle once, the first time the list arrives —
+    // a plain field write here (no setState) is enough since this build
+    // pass already reflects it in the dropdown below.
+    if (!_defaultVehicleApplied && vehicles.isNotEmpty) {
+      _selectedVehicleId = _defaultVehicleOf(vehicles)?.id;
+      _defaultVehicleApplied = true;
+    }
+
     return AlertDialog(
       title: const Text('Stop Trip'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Are you sure you want to stop tracking?'),
-          const SizedBox(height: 16),
-          Text(
-            'Trip type',
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: Colors.grey,
-                ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: ChoiceChip(
-                  label: const Text('Business'),
-                  selected: _tripType == TripType.business,
-                  onSelected: (_) =>
-                      setState(() => _tripType = TripType.business),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ChoiceChip(
-                  label: const Text('Personal'),
-                  selected: _tripType == TripType.personal,
-                  onSelected: (_) =>
-                      setState(() => _tripType = TripType.personal),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _companyController,
-            decoration: const InputDecoration(
-              labelText: 'Company name (optional)',
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Are you sure you want to stop tracking?'),
+            const SizedBox(height: 16),
+            Text(
+              'Trip type',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Colors.grey,
+                  ),
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: ChoiceChip(
+                    label: const Text('Business'),
+                    selected: _tripType == TripType.business,
+                    onSelected: (_) =>
+                        setState(() => _tripType = TripType.business),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ChoiceChip(
+                    label: const Text('Personal'),
+                    selected: _tripType == TripType.personal,
+                    onSelected: (_) =>
+                        setState(() => _tripType = TripType.personal),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Vehicle',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Colors.grey,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<int?>(
+              initialValue: _selectedVehicleId,
+              isExpanded: true,
+              decoration: const InputDecoration(isDense: true),
+              items: [
+                const DropdownMenuItem<int?>(child: Text('None')),
+                for (final vehicle in vehicles)
+                  DropdownMenuItem<int?>(
+                    value: vehicle.id,
+                    child: Text(vehicle.name),
+                  ),
+              ],
+              onChanged: (value) => setState(() => _selectedVehicleId = value),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _companyController,
+              decoration: const InputDecoration(
+                labelText: 'Company name (optional)',
+              ),
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(
@@ -466,6 +525,7 @@ class _StopTripDialogState extends State<_StopTripDialog> {
             _StopTripResult(
               tripType: _tripType,
               companyName: _companyController.text.trim(),
+              vehicleNumber: _plateNumberOf(vehicles, _selectedVehicleId),
             ),
           ),
           child: Text(

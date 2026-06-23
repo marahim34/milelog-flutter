@@ -1,15 +1,17 @@
 import 'package:drift/drift.dart';
 
 import '../database/app_database.dart';
+import '../managers/odometer_manager.dart';
 
 /// Mediates between ViewModels and [VehiclesDao].
 ///
 /// UI and Notifiers must never call VehiclesDao directly — all vehicle reads
 /// and writes go through this repository (see CLAUDE.md MVVM rule).
 class VehicleRepository {
-  VehicleRepository(this._vehiclesDao);
+  VehicleRepository(this._vehiclesDao, this._odometerManager);
 
   final VehiclesDao _vehiclesDao;
+  final OdometerManager _odometerManager;
 
   Stream<List<Vehicle>> watchAll() => _vehiclesDao.watchAll();
 
@@ -43,10 +45,9 @@ class VehicleRepository {
     );
   }
 
-  /// Updates an existing vehicle. [lastOdometer] is recomputed by preserving
-  /// the trip-distance delta already accrued on [existing] and applying it
-  /// to the new [initialOdometer] — never set lastOdometer directly without
-  /// going through computed logic (see CLAUDE.md odometer-chain rule).
+  /// Updates an existing vehicle, then asks [OdometerManager] to recompute
+  /// lastOdometer from initialOdometer + Σ trip distances — never set it
+  /// directly from a delta (see CLAUDE.md odometer-chain rule).
   Future<void> updateVehicleDetails({
     required Vehicle existing,
     required String name,
@@ -58,8 +59,6 @@ class VehicleRepository {
     if (isDefault) {
       await _vehiclesDao.clearDefault();
     }
-    final tripDistanceSoFar = existing.lastOdometer - existing.initialOdometer;
-    final recomputedLastOdometer = initialOdometer + tripDistanceSoFar;
 
     await _vehiclesDao.updateVehicle(
       existing
@@ -68,11 +67,12 @@ class VehicleRepository {
             plateNumber: plateNumber,
             defaultMileageRate: defaultMileageRate,
             initialOdometer: initialOdometer,
-            lastOdometer: recomputedLastOdometer,
             isDefault: isDefault,
           )
           .toCompanion(true),
     );
+
+    await _odometerManager.correctOdometerChain(existing.id);
   }
 
   Future<void> deleteVehicle(int id) => _vehiclesDao.deleteVehicle(id);

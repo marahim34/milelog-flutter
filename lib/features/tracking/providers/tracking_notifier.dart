@@ -131,7 +131,8 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
     _speedSub = _locationService.speedStream.listen((speedKmh) {
       state = state.copyWith(
         currentSpeedKmh: speedKmh,
-        maxSpeedKmh: speedKmh > state.maxSpeedKmh ? speedKmh : state.maxSpeedKmh,
+        maxSpeedKmh:
+            speedKmh > state.maxSpeedKmh ? speedKmh : state.maxSpeedKmh,
       );
     });
     _distanceSub = _locationService.distanceStream.listen((distanceKm) {
@@ -204,6 +205,7 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
   Future<void> stopAndSave({
     required TripType tripType,
     required String companyName,
+    required String vehicleNumber,
   }) async {
     _elapsedTimer?.cancel();
     await _locationService.stop();
@@ -234,7 +236,7 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
         startAddress: const Value(''),
         endAddress: const Value(''),
         companyName: Value(companyName),
-        vehicleNumber: const Value(''),
+        vehicleNumber: Value(vehicleNumber),
         odometerStart: const Value(0.0),
         odometerEnd: const Value(0.0),
         mileageRate: const Value(0.55),

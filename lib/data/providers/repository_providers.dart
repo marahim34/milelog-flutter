@@ -7,11 +7,18 @@ import 'database_provider.dart';
 
 /// Repository providers sit between DAO providers and feature Notifiers.
 final tripRepositoryProvider = Provider<TripRepository>(
-  (ref) => TripRepository(ref.watch(tripsDaoProvider)),
+  (ref) => TripRepository(
+    ref.watch(tripsDaoProvider),
+    ref.watch(vehiclesDaoProvider),
+    ref.watch(odometerManagerProvider),
+  ),
 );
 
 final vehicleRepositoryProvider = Provider<VehicleRepository>(
-  (ref) => VehicleRepository(ref.watch(vehiclesDaoProvider)),
+  (ref) => VehicleRepository(
+    ref.watch(vehiclesDaoProvider),
+    ref.watch(odometerManagerProvider),
+  ),
 );
 
 final workplaceRepositoryProvider = Provider<WorkplaceRepository>(

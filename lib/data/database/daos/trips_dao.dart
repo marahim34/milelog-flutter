@@ -64,6 +64,18 @@ class TripsDao extends DatabaseAccessor<AppDatabase> with _$TripsDaoMixin {
 
   Future<List<Trip>> getAllTrips() => select(trips).get();
 
+  /// Sum of [distanceKm] across completed trips for one vehicle, keyed by
+  /// plate number — used by OdometerManager to recompute lastOdometer.
+  Future<double> sumDistanceForVehicle(String vehicleNumber) async {
+    final sum = trips.distanceKm.sum();
+    final q = selectOnly(trips)
+      ..addColumns([sum])
+      ..where(
+        trips.vehicleNumber.equals(vehicleNumber) & trips.isActive.equals(false),
+      );
+    return (await q.getSingle()).read(sum) ?? 0.0;
+  }
+
   // ── Trip mutations ───────────────────────────────────────────────────────
 
   Future<int> insertTrip(TripsCompanion entry) => into(trips).insert(entry);
