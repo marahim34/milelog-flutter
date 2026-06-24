@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:permission_handler/permission_handler.dart';
 
+import '../../core/theme/app_theme.dart';
 import '../../data/database/app_database.dart';
+import '../../data/services/bluetooth_service.dart';
 import 'providers/add_edit_vehicle_provider.dart';
 
 class AddEditVehicleScreen extends ConsumerWidget {
@@ -29,6 +32,8 @@ class AddEditVehicleScreen extends ConsumerWidget {
             required defaultMileageRate,
             required initialOdometer,
             required isDefault,
+            required bluetoothMac,
+            required bluetoothAutoStart,
           }) async {
             await ref.read(addEditVehicleProvider(vehicleId).notifier).save(
                   name: name,
@@ -36,6 +41,8 @@ class AddEditVehicleScreen extends ConsumerWidget {
                   defaultMileageRate: defaultMileageRate,
                   initialOdometer: initialOdometer,
                   isDefault: isDefault,
+                  bluetoothMac: bluetoothMac,
+                  bluetoothAutoStart: bluetoothAutoStart,
                 );
             if (context.mounted) context.pop();
           },
@@ -51,19 +58,21 @@ typedef _VehicleSaveCallback = Future<void> Function({
   required double defaultMileageRate,
   required double initialOdometer,
   required bool isDefault,
+  required String? bluetoothMac,
+  required bool bluetoothAutoStart,
 });
 
-class _VehicleForm extends StatefulWidget {
+class _VehicleForm extends ConsumerStatefulWidget {
   const _VehicleForm({required this.initialVehicle, required this.onSave});
 
   final Vehicle? initialVehicle;
   final _VehicleSaveCallback onSave;
 
   @override
-  State<_VehicleForm> createState() => _VehicleFormState();
+  ConsumerState<_VehicleForm> createState() => _VehicleFormState();
 }
 
-class _VehicleFormState extends State<_VehicleForm> {
+class _VehicleFormState extends ConsumerState<_VehicleForm> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
   late final TextEditingController _plateController;
@@ -71,6 +80,11 @@ class _VehicleFormState extends State<_VehicleForm> {
   late final TextEditingController _initialOdometerController;
   late bool _isDefault;
   bool _isSaving = false;
+
+  String? _bluetoothMac;
+  String? _bluetoothDeviceName;
+  late bool _bluetoothAutoStart;
+  bool _resolvingDeviceName = false;
 
   @override
   void initState() {
@@ -87,6 +101,26 @@ class _VehicleFormState extends State<_VehicleForm> {
       text: vehicle != null ? vehicle.initialOdometer.toString() : '0',
     );
     _isDefault = vehicle?.isDefault ?? false;
+    _bluetoothMac = vehicle?.bluetoothMac;
+    _bluetoothAutoStart = vehicle?.bluetoothAutoStart ?? true;
+    if (_bluetoothMac != null) _resolveDeviceName();
+  }
+
+  Future<void> _resolveDeviceName() async {
+    setState(() => _resolvingDeviceName = true);
+    try {
+      final hasPermission = await BluetoothService.hasPermission();
+      if (!hasPermission) return;
+      final devices = await BluetoothService.getBondedDevices();
+      for (final device in devices) {
+        if (device.address == _bluetoothMac) {
+          if (mounted) setState(() => _bluetoothDeviceName = device.name);
+          break;
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _resolvingDeviceName = false);
+    }
   }
 
   @override
@@ -96,6 +130,67 @@ class _VehicleFormState extends State<_VehicleForm> {
     _mileageRateController.dispose();
     _initialOdometerController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handlePairDevice() async {
+    var status = await Permission.bluetoothConnect.status;
+    if (status.isDenied) {
+      status = await Permission.bluetoothConnect.request();
+    }
+    if (!mounted) return;
+
+    if (status.isPermanentlyDenied) {
+      final shouldOpenSettings = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Bluetooth permission needed'),
+          content: const Text(
+            'To pair a vehicle, allow Bluetooth access in app settings.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Open settings'),
+            ),
+          ],
+        ),
+      );
+      if (shouldOpenSettings ?? false) await openAppSettings();
+      return;
+    }
+
+    if (!status.isGranted) return;
+
+    final devices = await BluetoothService.getBondedDevices();
+    if (!mounted) return;
+
+    final selected = await showModalBottomSheet<_DevicePick>(
+      context: context,
+      backgroundColor: AppColors.of(context).surfaceElevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(AppTheme.cardRadius)),
+      ),
+      isScrollControlled: true,
+      builder: (context) => _DevicePickerSheet(devices: devices),
+    );
+
+    if (selected == null) return;
+    setState(() {
+      _bluetoothMac = selected.address;
+      _bluetoothDeviceName = selected.name;
+    });
+  }
+
+  void _handleForgetDevice() {
+    setState(() {
+      _bluetoothMac = null;
+      _bluetoothDeviceName = null;
+    });
   }
 
   Future<void> _handleSave() async {
@@ -111,6 +206,8 @@ class _VehicleFormState extends State<_VehicleForm> {
         initialOdometer:
             double.tryParse(_initialOdometerController.text.trim()) ?? 0.0,
         isDefault: _isDefault,
+        bluetoothMac: _bluetoothMac,
+        bluetoothAutoStart: _bluetoothAutoStart,
       );
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -119,6 +216,7 @@ class _VehicleFormState extends State<_VehicleForm> {
 
   @override
   Widget build(BuildContext context) {
+    final isPaired = _bluetoothMac != null;
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -154,7 +252,8 @@ class _VehicleFormState extends State<_VehicleForm> {
               TextFormField(
                 controller: _mileageRateController,
                 textInputAction: TextInputAction.next,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(
                   labelText: 'Mileage rate (per km)',
                   helperText: 'Leave blank to use the global default rate',
@@ -165,7 +264,8 @@ class _VehicleFormState extends State<_VehicleForm> {
               TextFormField(
                 controller: _initialOdometerController,
                 textInputAction: TextInputAction.done,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(
                   labelText: 'Initial odometer (km)',
                   prefixIcon: Icon(Icons.speed),
@@ -182,6 +282,44 @@ class _VehicleFormState extends State<_VehicleForm> {
                 value: _isDefault,
                 onChanged: (value) => setState(() => _isDefault = value),
               ),
+              const Divider(height: 24),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.bluetooth),
+                title: Text(isPaired
+                    ? (_bluetoothDeviceName ?? _bluetoothMac!)
+                    : 'No paired device'),
+                subtitle: Text(
+                  isPaired
+                      ? _bluetoothMac!
+                      : 'Pair a Bluetooth device to auto-start trips',
+                ),
+                trailing: _resolvingDeviceName
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : isPaired
+                        ? IconButton(
+                            icon: const Icon(Icons.close),
+                            tooltip: 'Forget device',
+                            onPressed: _handleForgetDevice,
+                          )
+                        : const Icon(Icons.chevron_right),
+                onTap: _handlePairDevice,
+              ),
+              if (isPaired)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Auto-start trip on connect'),
+                  subtitle: const Text(
+                    'Starts tracking when this device connects, pauses on disconnect',
+                  ),
+                  value: _bluetoothAutoStart,
+                  onChanged: (value) =>
+                      setState(() => _bluetoothAutoStart = value),
+                ),
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: _isSaving ? null : _handleSave,
@@ -198,6 +336,83 @@ class _VehicleFormState extends State<_VehicleForm> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DevicePick {
+  const _DevicePick({required this.name, required this.address});
+
+  final String name;
+  final String address;
+}
+
+class _DevicePickerSheet extends StatelessWidget {
+  const _DevicePickerSheet({required this.devices});
+
+  final List<BondedDevice> devices;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppTheme.space10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppTheme.space20,
+                AppTheme.space10,
+                AppTheme.space20,
+                AppTheme.space10,
+              ),
+              child: Text('Paired devices',
+                  style: Theme.of(context).textTheme.titleLarge),
+            ),
+            if (devices.isEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppTheme.space20,
+                  0,
+                  AppTheme.space20,
+                  AppTheme.space20,
+                ),
+                child: Text(
+                  'No paired devices found. Pair your vehicle\'s Bluetooth '
+                  'in Android Settings first, then come back here.',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(color: colors.textDim),
+                ),
+              )
+            else
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.5,
+                ),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: devices.length,
+                  itemBuilder: (context, index) {
+                    final device = devices[index];
+                    return ListTile(
+                      leading: Icon(Icons.bluetooth, color: colors.accent),
+                      title: Text(device.name),
+                      subtitle: Text(device.address),
+                      onTap: () => Navigator.of(context).pop(
+                        _DevicePick(name: device.name, address: device.address),
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
         ),
       ),
     );

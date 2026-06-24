@@ -16,7 +16,8 @@ class Vehicles extends Table {
   TextColumn get plateNumber => text()();
 
   /// 0.0 means "use the global app default rate".
-  RealColumn get defaultMileageRate => real().withDefault(const Constant(0.0))();
+  RealColumn get defaultMileageRate =>
+      real().withDefault(const Constant(0.0))();
 
   /// Odometer reading when the vehicle was first added to the app.
   RealColumn get initialOdometer => real().withDefault(const Constant(0.0))();
@@ -27,5 +28,6 @@ class Vehicles extends Table {
   BoolColumn get isDefault => boolean().withDefault(const Constant(false))();
   TextColumn get notes => text().withDefault(const Constant(''))();
   TextColumn get bluetoothMac => text().nullable()();
-  BoolColumn get bluetoothAutoStart => boolean().withDefault(const Constant(true))();
+  BoolColumn get bluetoothAutoStart =>
+      boolean().withDefault(const Constant(true))();
 }

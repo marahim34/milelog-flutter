@@ -19,8 +19,7 @@ class TripRepository {
   Future<int> insertTrip(TripsCompanion entry) async {
     final id = await _tripsDao.insertTrip(entry);
 
-    final plate =
-        entry.vehicleNumber.present ? entry.vehicleNumber.value : '';
+    final plate = entry.vehicleNumber.present ? entry.vehicleNumber.value : '';
     if (plate.isNotEmpty) {
       final vehicle = await _vehiclesDao.getByPlate(plate);
       if (vehicle != null) {

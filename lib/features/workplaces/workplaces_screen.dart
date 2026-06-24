@@ -36,7 +36,9 @@ class WorkplacesScreen extends ConsumerWidget {
     );
 
     if (confirmed == true) {
-      await ref.read(workplacesListProvider.notifier).deleteWorkplace(workplace.id);
+      await ref
+          .read(workplacesListProvider.notifier)
+          .deleteWorkplace(workplace.id);
     }
   }
 
@@ -93,8 +95,8 @@ class WorkplacesScreen extends ConsumerWidget {
                   padding: const EdgeInsets.only(bottom: 12),
                   child: _WorkplaceCard(
                     workplace: workplace,
-                    onTap: () => context
-                        .push(AppRoutes.workplaceEditPath(workplace.id)),
+                    onTap: () =>
+                        context.push(AppRoutes.workplaceEditPath(workplace.id)),
                     onDelete: () => _confirmDelete(context, ref, workplace),
                   ),
                 );
@@ -130,7 +132,8 @@ class _WorkplaceCard extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 24,
-                backgroundColor: Theme.of(context).colorScheme.primary.withAlpha(30),
+                backgroundColor:
+                    Theme.of(context).colorScheme.primary.withAlpha(30),
                 child: Icon(
                   workplace.isHome ? Icons.home : Icons.business,
                   color: Theme.of(context).colorScheme.primary,
@@ -146,7 +149,10 @@ class _WorkplaceCard extends StatelessWidget {
                         Expanded(
                           child: Text(
                             workplace.name,
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(
                                   fontWeight: FontWeight.bold,
                                 ),
                             overflow: TextOverflow.ellipsis,
@@ -160,13 +166,20 @@ class _WorkplaceCard extends StatelessWidget {
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.primary.withAlpha(30),
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .primary
+                                  .withAlpha(30),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
                               'HOME',
-                              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                    color: Theme.of(context).colorScheme.primary,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(
+                                    color:
+                                        Theme.of(context).colorScheme.primary,
                                     fontWeight: FontWeight.bold,
                                   ),
                             ),
@@ -193,9 +206,10 @@ class _WorkplaceCard extends StatelessWidget {
                         const SizedBox(width: 6),
                         Text(
                           '${workplace.radiusMeters.toStringAsFixed(0)} m geofence',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Colors.grey,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Colors.grey,
+                                  ),
                         ),
                       ],
                     ),

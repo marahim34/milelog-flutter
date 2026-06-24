@@ -3,18 +3,25 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
+import 'core/theme/theme_providers.dart';
+import 'features/tracking/providers/bluetooth_auto_tracking_provider.dart';
 
 class MileLogApp extends ConsumerWidget {
   const MileLogApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Watched once here purely to instantiate it for the app's lifetime —
+    // it has no UI, it just needs to start listening for ACL events.
+    ref.watch(bluetoothAutoTrackingProvider);
+    final palette = ref.watch(paletteProvider);
+    final themeMode = ref.watch(themeModeProvider);
+
     return MaterialApp.router(
       title: 'MileLog',
-      // Dark mode forced at app level — no theme switcher (matches original Android app).
-      theme: AppTheme.dark,
-      darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.dark,
+      theme: AppTheme.themeFor(palette, Brightness.light),
+      darkTheme: AppTheme.themeFor(palette, Brightness.dark),
+      themeMode: themeMode,
       // English locale forced — no language picker.
       locale: const Locale('en'),
       supportedLocales: const [Locale('en')],

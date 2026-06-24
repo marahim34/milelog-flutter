@@ -8,8 +8,8 @@ class LocationPoints extends Table {
   IntColumn get id => integer().autoIncrement()();
 
   /// CASCADE delete when the parent trip is deleted.
-  IntColumn get tripId =>
-      integer().customConstraint('NOT NULL REFERENCES trips(id) ON DELETE CASCADE')();
+  IntColumn get tripId => integer()
+      .customConstraint('NOT NULL REFERENCES trips(id) ON DELETE CASCADE')();
 
   RealColumn get latitude => real()();
   RealColumn get longitude => real()();

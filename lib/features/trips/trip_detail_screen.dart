@@ -48,7 +48,9 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
 
     if (result == null) return;
 
-    await ref.read(tripDetailProvider(widget.tripId).notifier).updateTripDetails(
+    await ref
+        .read(tripDetailProvider(widget.tripId).notifier)
+        .updateTripDetails(
           tripType: result.tripType,
           companyName: result.companyName,
         );
@@ -154,7 +156,6 @@ class _TripDetailBody extends StatelessWidget {
               ),
           ],
         ),
-
         SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -170,7 +171,6 @@ class _TripDetailBody extends StatelessWidget {
             ),
           ),
         ),
-
         Align(
           alignment: Alignment.bottomCenter,
           child: _TripSummarySheet(
@@ -222,9 +222,8 @@ class _TripSummarySheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final displayCompany = trip.companyName.isEmpty
-        ? 'No company set'
-        : trip.companyName;
+    final displayCompany =
+        trip.companyName.isEmpty ? 'No company set' : trip.companyName;
 
     return SafeArea(
       top: false,
@@ -250,7 +249,8 @@ class _TripSummarySheet extends StatelessWidget {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: isBusinessTrip
                         ? Theme.of(context).colorScheme.primary.withAlpha(30)

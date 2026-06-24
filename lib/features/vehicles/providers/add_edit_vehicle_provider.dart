@@ -21,6 +21,8 @@ class AddEditVehicleNotifier
     required double defaultMileageRate,
     required double initialOdometer,
     required bool isDefault,
+    String? bluetoothMac,
+    bool bluetoothAutoStart = true,
   }) async {
     final repository = ref.read(vehicleRepositoryProvider);
     final existing = state.value;
@@ -32,6 +34,8 @@ class AddEditVehicleNotifier
         defaultMileageRate: defaultMileageRate,
         initialOdometer: initialOdometer,
         isDefault: isDefault,
+        bluetoothMac: bluetoothMac,
+        bluetoothAutoStart: bluetoothAutoStart,
       );
     } else {
       await repository.updateVehicleDetails(
@@ -41,6 +45,8 @@ class AddEditVehicleNotifier
         defaultMileageRate: defaultMileageRate,
         initialOdometer: initialOdometer,
         isDefault: isDefault,
+        bluetoothMac: bluetoothMac,
+        bluetoothAutoStart: bluetoothAutoStart,
       );
     }
   }

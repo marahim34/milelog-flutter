@@ -5,13 +5,13 @@ import '../app_database.dart';
 part 'odometer_dao.g.dart';
 
 @DriftAccessor(tables: [OdometerReadings])
-class OdometerDao extends DatabaseAccessor<AppDatabase> with _$OdometerDaoMixin {
+class OdometerDao extends DatabaseAccessor<AppDatabase>
+    with _$OdometerDaoMixin {
   OdometerDao(super.db);
 
-  Stream<List<OdometerReading>> watchAll() =>
-      (select(odometerReadings)
-            ..orderBy([(r) => OrderingTerm.desc(r.timestamp)]))
-          .watch();
+  Stream<List<OdometerReading>> watchAll() => (select(odometerReadings)
+        ..orderBy([(r) => OrderingTerm.desc(r.timestamp)]))
+      .watch();
 
   Future<List<OdometerReading>> getAll() => select(odometerReadings).get();
 

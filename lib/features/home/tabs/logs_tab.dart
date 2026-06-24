@@ -78,10 +78,18 @@ class _LogsTabState extends ConsumerState<LogsTab> {
                   final filteredTrips = _searchQuery.isEmpty
                       ? trips
                       : trips.where((trip) {
-                          return trip.companyName.toLowerCase().contains(_searchQuery) ||
-                              trip.tripType.toLowerCase().contains(_searchQuery) ||
-                              trip.startAddress.toLowerCase().contains(_searchQuery) ||
-                              trip.endAddress.toLowerCase().contains(_searchQuery);
+                          return trip.companyName
+                                  .toLowerCase()
+                                  .contains(_searchQuery) ||
+                              trip.tripType
+                                  .toLowerCase()
+                                  .contains(_searchQuery) ||
+                              trip.startAddress
+                                  .toLowerCase()
+                                  .contains(_searchQuery) ||
+                              trip.endAddress
+                                  .toLowerCase()
+                                  .contains(_searchQuery);
                         }).toList();
 
                   if (filteredTrips.isEmpty) {
@@ -90,7 +98,9 @@ class _LogsTabState extends ConsumerState<LogsTab> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(
-                            _searchQuery.isEmpty ? Icons.route : Icons.search_off,
+                            _searchQuery.isEmpty
+                                ? Icons.route
+                                : Icons.search_off,
                             size: 64,
                             color: Colors.grey[600],
                           ),
@@ -99,9 +109,10 @@ class _LogsTabState extends ConsumerState<LogsTab> {
                             _searchQuery.isEmpty
                                 ? 'No trips yet'
                                 : 'No trips found',
-                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                  color: Colors.grey,
-                                ),
+                            style:
+                                Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                      color: Colors.grey,
+                                    ),
                           ),
                         ],
                       ),
@@ -208,7 +219,10 @@ class _TripCard extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: isBusinessTrip
                           ? Theme.of(context).colorScheme.primary.withAlpha(30)
-                          : Theme.of(context).colorScheme.secondary.withAlpha(30),
+                          : Theme.of(context)
+                              .colorScheme
+                              .secondary
+                              .withAlpha(30),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
@@ -234,7 +248,10 @@ class _TripCard extends StatelessWidget {
                     children: [
                       Text(
                         '${trip.distanceKm.toStringAsFixed(1)} km',
-                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        style: Theme.of(context)
+                            .textTheme
+                            .headlineMedium
+                            ?.copyWith(
                               fontWeight: FontWeight.bold,
                               color: Theme.of(context).colorScheme.primary,
                             ),
@@ -250,7 +267,10 @@ class _TripCard extends StatelessWidget {
                           const SizedBox(width: 6),
                           Text(
                             displayCompany,
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(
                                   color: Colors.grey,
                                 ),
                           ),

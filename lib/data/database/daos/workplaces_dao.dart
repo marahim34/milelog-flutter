@@ -5,7 +5,8 @@ import '../app_database.dart';
 part 'workplaces_dao.g.dart';
 
 @DriftAccessor(tables: [WorkPlaces])
-class WorkPlacesDao extends DatabaseAccessor<AppDatabase> with _$WorkPlacesDaoMixin {
+class WorkPlacesDao extends DatabaseAccessor<AppDatabase>
+    with _$WorkPlacesDaoMixin {
   WorkPlacesDao(super.db);
 
   Stream<List<WorkPlace>> watchAll() => select(workPlaces).watch();
@@ -16,7 +17,8 @@ class WorkPlacesDao extends DatabaseAccessor<AppDatabase> with _$WorkPlacesDaoMi
       (select(workPlaces)..where((w) => w.id.equals(id))).getSingleOrNull();
 
   Future<WorkPlace?> getHome() =>
-      (select(workPlaces)..where((w) => w.isHome.equals(true))).getSingleOrNull();
+      (select(workPlaces)..where((w) => w.isHome.equals(true)))
+          .getSingleOrNull();
 
   Future<List<WorkPlace>> getGeofenceEnabled() =>
       (select(workPlaces)..where((w) => w.geofenceEnabled.equals(true))).get();
@@ -25,7 +27,8 @@ class WorkPlacesDao extends DatabaseAccessor<AppDatabase> with _$WorkPlacesDaoMi
       into(workPlaces).insert(entry);
 
   Future<void> updateWorkPlace(WorkPlacesCompanion entry) =>
-      (update(workPlaces)..where((w) => w.id.equals(entry.id.value))).write(entry);
+      (update(workPlaces)..where((w) => w.id.equals(entry.id.value)))
+          .write(entry);
 
   Future<void> deleteById(int id) =>
       (delete(workPlaces)..where((w) => w.id.equals(id))).go();

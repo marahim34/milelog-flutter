@@ -5,7 +5,8 @@ import '../app_database.dart';
 part 'waypoints_dao.g.dart';
 
 @DriftAccessor(tables: [TripWaypoints, TripEdits])
-class WaypointsDao extends DatabaseAccessor<AppDatabase> with _$WaypointsDaoMixin {
+class WaypointsDao extends DatabaseAccessor<AppDatabase>
+    with _$WaypointsDaoMixin {
   WaypointsDao(super.db);
 
   // ── Waypoints ────────────────────────────────────────────────────────────
@@ -33,9 +34,8 @@ class WaypointsDao extends DatabaseAccessor<AppDatabase> with _$WaypointsDaoMixi
   Future<void> insertEdit(TripEditsCompanion entry) =>
       into(tripEdits).insert(entry);
 
-  Stream<List<TripEdit>> watchEditsForTrip(int tripId) =>
-      (select(tripEdits)
-            ..where((e) => e.tripId.equals(tripId))
-            ..orderBy([(e) => OrderingTerm.desc(e.timestamp)]))
-          .watch();
+  Stream<List<TripEdit>> watchEditsForTrip(int tripId) => (select(tripEdits)
+        ..where((e) => e.tripId.equals(tripId))
+        ..orderBy([(e) => OrderingTerm.desc(e.timestamp)]))
+      .watch();
 }

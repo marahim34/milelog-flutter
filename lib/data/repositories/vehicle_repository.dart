@@ -19,6 +19,11 @@ class VehicleRepository {
 
   Future<Vehicle?> getDefault() => _vehiclesDao.getDefault();
 
+  Future<Vehicle?> getByPlate(String plate) => _vehiclesDao.getByPlate(plate);
+
+  Future<Vehicle?> getByBluetoothMac(String mac) =>
+      _vehiclesDao.getByBluetoothMac(mac);
+
   /// Inserts a new vehicle. [lastOdometer] is set equal to [initialOdometer]
   /// since a brand-new vehicle has no trips yet — that is the computed value
   /// (initialOdometer + Σ trip distances) at this point in time, not an
@@ -29,6 +34,8 @@ class VehicleRepository {
     required double defaultMileageRate,
     required double initialOdometer,
     required bool isDefault,
+    String? bluetoothMac,
+    bool bluetoothAutoStart = true,
   }) async {
     if (isDefault) {
       await _vehiclesDao.clearDefault();
@@ -41,6 +48,8 @@ class VehicleRepository {
         initialOdometer: Value(initialOdometer),
         lastOdometer: Value(initialOdometer),
         isDefault: Value(isDefault),
+        bluetoothMac: Value(bluetoothMac),
+        bluetoothAutoStart: Value(bluetoothAutoStart),
       ),
     );
   }
@@ -55,6 +64,8 @@ class VehicleRepository {
     required double defaultMileageRate,
     required double initialOdometer,
     required bool isDefault,
+    String? bluetoothMac,
+    bool bluetoothAutoStart = true,
   }) async {
     if (isDefault) {
       await _vehiclesDao.clearDefault();
@@ -68,6 +79,8 @@ class VehicleRepository {
             defaultMileageRate: defaultMileageRate,
             initialOdometer: initialOdometer,
             isDefault: isDefault,
+            bluetoothMac: Value(bluetoothMac),
+            bluetoothAutoStart: bluetoothAutoStart,
           )
           .toCompanion(true),
     );

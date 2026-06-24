@@ -14,7 +14,8 @@ class TripsDao extends DatabaseAccessor<AppDatabase> with _$TripsDaoMixin {
       (select(trips)..where((t) => t.isActive.equals(true))).getSingleOrNull();
 
   Stream<Trip?> watchActiveTrip() =>
-      (select(trips)..where((t) => t.isActive.equals(true))).watchSingleOrNull();
+      (select(trips)..where((t) => t.isActive.equals(true)))
+          .watchSingleOrNull();
 
   // ── Trip queries ─────────────────────────────────────────────────────────
 
@@ -46,15 +47,14 @@ class TripsDao extends DatabaseAccessor<AppDatabase> with _$TripsDaoMixin {
     return (await q.getSingle()).read(count) ?? 0;
   }
 
-  Future<List<Trip>> getTripsInRange(int startMs, int endMs) =>
-      (select(trips)
-            ..where(
-              (t) =>
-                  t.startTime.isBiggerOrEqualValue(startMs) &
-                  t.startTime.isSmallerOrEqualValue(endMs),
-            )
-            ..orderBy([(t) => OrderingTerm.asc(t.startTime)]))
-          .get();
+  Future<List<Trip>> getTripsInRange(int startMs, int endMs) => (select(trips)
+        ..where(
+          (t) =>
+              t.startTime.isBiggerOrEqualValue(startMs) &
+              t.startTime.isSmallerOrEqualValue(endMs),
+        )
+        ..orderBy([(t) => OrderingTerm.asc(t.startTime)]))
+      .get();
 
   Future<List<Trip>> getUnsyncedTrips() => (select(trips)
         ..where(
@@ -71,7 +71,8 @@ class TripsDao extends DatabaseAccessor<AppDatabase> with _$TripsDaoMixin {
     final q = selectOnly(trips)
       ..addColumns([sum])
       ..where(
-        trips.vehicleNumber.equals(vehicleNumber) & trips.isActive.equals(false),
+        trips.vehicleNumber.equals(vehicleNumber) &
+            trips.isActive.equals(false),
       );
     return (await q.getSingle()).read(sum) ?? 0.0;
   }

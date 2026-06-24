@@ -25,12 +25,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _onTabTapped(int index) {
     ref.read(selectedTabIndexProvider.notifier).state = index;
-    _pageController.jumpToPage(index);
   }
 
   @override
   Widget build(BuildContext context) {
     final selectedIndex = ref.watch(selectedTabIndexProvider);
+
+    // Single source of truth for which page is shown — keeps the bottom nav
+    // and any other widget (e.g. a "See all" link) able to switch tabs by
+    // just writing to the provider, not just direct taps.
+    ref.listen(selectedTabIndexProvider, (previous, next) {
+      if (_pageController.hasClients && _pageController.page?.round() != next) {
+        _pageController.jumpToPage(next);
+      }
+    });
 
     return Scaffold(
       body: PageView(
@@ -71,4 +79,3 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 }
-

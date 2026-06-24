@@ -84,8 +84,8 @@ class ReportExportService {
             data: [
               for (final trip in trips)
                 [
-                  DateFormat('MMM d, y')
-                      .format(DateTime.fromMillisecondsSinceEpoch(trip.startTime)),
+                  DateFormat('MMM d, y').format(
+                      DateTime.fromMillisecondsSinceEpoch(trip.startTime)),
                   trip.distanceKm.toStringAsFixed(1),
                   TripType.fromString(trip.tripType).value,
                   trip.companyName.isEmpty ? '-' : trip.companyName,
@@ -102,9 +102,11 @@ class ReportExportService {
             ),
             cellStyle: const pw.TextStyle(fontSize: 9),
             cellAlignment: pw.Alignment.centerLeft,
-            cellPadding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            cellPadding:
+                const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             rowDecoration: const pw.BoxDecoration(
-              border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.5)),
+              border: pw.Border(
+                  bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.5)),
             ),
           ),
           pw.SizedBox(height: 24),
@@ -118,7 +120,8 @@ class ReportExportService {
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
                 _totalColumn('TOTAL TRIPS', '${trips.length}'),
-                _totalColumn('TOTAL DISTANCE', '${totalDistance.toStringAsFixed(1)} km'),
+                _totalColumn(
+                    'TOTAL DISTANCE', '${totalDistance.toStringAsFixed(1)} km'),
                 _totalColumn(
                   'TOTAL COST',
                   '${AppConstants.defaultCurrencySymbol}${totalCost.toStringAsFixed(2)}',

@@ -131,7 +131,8 @@ class _VehicleCard extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 24,
-                backgroundColor: Theme.of(context).colorScheme.primary.withAlpha(30),
+                backgroundColor:
+                    Theme.of(context).colorScheme.primary.withAlpha(30),
                 child: Icon(
                   Icons.directions_car,
                   color: Theme.of(context).colorScheme.primary,
@@ -147,7 +148,10 @@ class _VehicleCard extends StatelessWidget {
                         Expanded(
                           child: Text(
                             vehicle.name,
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(
                                   fontWeight: FontWeight.bold,
                                 ),
                             overflow: TextOverflow.ellipsis,
@@ -161,13 +165,20 @@ class _VehicleCard extends StatelessWidget {
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.primary.withAlpha(30),
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .primary
+                                  .withAlpha(30),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
                               'DEFAULT',
-                              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                    color: Theme.of(context).colorScheme.primary,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(
+                                    color:
+                                        Theme.of(context).colorScheme.primary,
                                     fontWeight: FontWeight.bold,
                                   ),
                             ),
@@ -189,9 +200,10 @@ class _VehicleCard extends StatelessWidget {
                         const SizedBox(width: 6),
                         Text(
                           '${NumberFormat('#,##0').format(vehicle.lastOdometer)} km',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Colors.grey,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Colors.grey,
+                                  ),
                         ),
                       ],
                     ),

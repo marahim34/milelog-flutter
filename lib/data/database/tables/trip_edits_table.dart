@@ -7,8 +7,8 @@ class TripEdits extends Table {
 
   IntColumn get id => integer().autoIncrement()();
 
-  IntColumn get tripId =>
-      integer().customConstraint('NOT NULL REFERENCES trips(id) ON DELETE CASCADE')();
+  IntColumn get tripId => integer()
+      .customConstraint('NOT NULL REFERENCES trips(id) ON DELETE CASCADE')();
 
   TextColumn get fieldChanged => text()();
   TextColumn get oldValue => text()();

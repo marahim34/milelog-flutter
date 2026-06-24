@@ -13,6 +13,14 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
+    <!-- Classic Bluetooth: bonded-device lookup + ACL connect/disconnect
+         observation for vehicle auto-tracking. BLUETOOTH/BLUETOOTH_ADMIN
+         cover Android <=11; BLUETOOTH_CONNECT is the Android 12+ runtime
+         permission (requested at runtime via permission_handler). -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+
     <application
         android:label="milelog_flutter"
         android:name="${applicationName}"

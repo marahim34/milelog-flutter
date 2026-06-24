@@ -10,6 +10,7 @@ import '../../../data/models/trip_type.dart';
 import '../../../data/providers/repository_providers.dart';
 import '../../../data/services/background_tracking_service.dart';
 import '../../../data/services/location_tracking_service.dart';
+import '../../../data/services/mileage_rate_service.dart';
 
 enum TrackingStatus {
   requestingPermission,
@@ -224,6 +225,13 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
     );
 
     final repository = ref.read(tripRepositoryProvider);
+    final vehicleRepository = ref.read(vehicleRepositoryProvider);
+    final vehicle = await vehicleRepository.getByPlate(vehicleNumber);
+    final globalRate = await MileageRateService.getRate();
+    final effectiveRate = (vehicle != null && vehicle.defaultMileageRate > 0)
+        ? vehicle.defaultMileageRate
+        : globalRate;
+
     await repository.insertTrip(
       TripsCompanion.insert(
         startTime: state.startTimeMs,
@@ -239,7 +247,7 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
         vehicleNumber: Value(vehicleNumber),
         odometerStart: const Value(0.0),
         odometerEnd: const Value(0.0),
-        mileageRate: const Value(0.55),
+        mileageRate: Value(effectiveRate),
         notes: const Value(''),
         isSynced: const Value(false),
         autoStarted: const Value(false),

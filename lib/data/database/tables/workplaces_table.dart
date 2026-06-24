@@ -11,7 +11,8 @@ class WorkPlaces extends Table {
   RealColumn get latitude => real().withDefault(const Constant(0.0))();
   RealColumn get longitude => real().withDefault(const Constant(0.0))();
   BoolColumn get isHome => boolean().withDefault(const Constant(false))();
-  BoolColumn get geofenceEnabled => boolean().withDefault(const Constant(false))();
+  BoolColumn get geofenceEnabled =>
+      boolean().withDefault(const Constant(false))();
 
   /// Geofence trigger radius in metres (default 100m matches Room schema).
   RealColumn get radiusMeters => real().withDefault(const Constant(100.0))();

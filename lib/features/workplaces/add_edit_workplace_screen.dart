@@ -31,9 +31,7 @@ class AddEditWorkplaceScreen extends ConsumerWidget {
             required radiusMeters,
             required isHome,
           }) async {
-            await ref
-                .read(addEditWorkplaceProvider(workplaceId).notifier)
-                .save(
+            await ref.read(addEditWorkplaceProvider(workplaceId).notifier).save(
                   name: name,
                   address: address,
                   latitude: latitude,
@@ -168,8 +166,8 @@ class _WorkplaceFormState extends State<_WorkplaceForm> {
                     child: TextFormField(
                       controller: _latitudeController,
                       textInputAction: TextInputAction.next,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true, signed: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true, signed: true),
                       decoration: const InputDecoration(labelText: 'Latitude'),
                       validator: _numberValidator,
                     ),
@@ -179,8 +177,8 @@ class _WorkplaceFormState extends State<_WorkplaceForm> {
                     child: TextFormField(
                       controller: _longitudeController,
                       textInputAction: TextInputAction.next,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true, signed: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true, signed: true),
                       decoration: const InputDecoration(labelText: 'Longitude'),
                       validator: _numberValidator,
                     ),
@@ -191,7 +189,8 @@ class _WorkplaceFormState extends State<_WorkplaceForm> {
               TextFormField(
                 controller: _radiusController,
                 textInputAction: TextInputAction.done,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(
                   labelText: 'Geofence radius (m)',
                   prefixIcon: Icon(Icons.my_location),

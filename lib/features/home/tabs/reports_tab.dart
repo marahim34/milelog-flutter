@@ -1,92 +1,91 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/constants/app_constants.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../data/database/app_database.dart';
 import '../../../data/models/trip_type.dart';
 import '../../reports/services/report_export_service.dart';
 import '../providers/completed_trips_provider.dart';
+import '../utils/trip_stats.dart';
 
 enum ReportPeriod { monthly, allTime }
 
-final selectedReportPeriodProvider = StateProvider<ReportPeriod>((ref) => ReportPeriod.monthly);
+final selectedReportPeriodProvider =
+    StateProvider<ReportPeriod>((ref) => ReportPeriod.monthly);
 
-class _ReportStats {
-  final double totalDistance;
-  final double totalCost;
-  final int totalTrips;
-  final int businessTrips;
-  final double businessDistance;
-  final double businessCost;
-  final int personalTrips;
-  final double personalDistance;
-  final double personalCost;
+/// One slice of the "by client" donut — a company name for business trips,
+/// 'Personal' for personal trips, or 'Other' once [AppConstants.reportTopCompanies]
+/// is exceeded.
+class _ClientSlice {
+  const _ClientSlice(
+      {required this.label, required this.km, required this.color});
 
-  const _ReportStats({
-    required this.totalDistance,
-    required this.totalCost,
-    required this.totalTrips,
-    required this.businessTrips,
-    required this.businessDistance,
-    required this.businessCost,
-    required this.personalTrips,
-    required this.personalDistance,
-    required this.personalCost,
-  });
+  final String label;
+  final double km;
+  final Color color;
+}
 
-  static _ReportStats fromTrips(List<Trip> trips) {
-    double totalDistance = 0;
-    double totalCost = 0;
-    int businessTrips = 0;
-    double businessDistance = 0;
-    double businessCost = 0;
-    int personalTrips = 0;
-    double personalDistance = 0;
-    double personalCost = 0;
-
-    for (final trip in trips) {
-      final distance = trip.distanceKm;
-      final cost = trip.distanceKm * trip.mileageRate;
-      final isBusiness = TripType.fromString(trip.tripType) == TripType.business;
-
-      totalDistance += distance;
-      totalCost += cost;
-
-      if (isBusiness) {
-        businessTrips++;
-        businessDistance += distance;
-        businessCost += cost;
-      } else {
-        personalTrips++;
-        personalDistance += distance;
-        personalCost += cost;
-      }
-    }
-
-    return _ReportStats(
-      totalDistance: totalDistance,
-      totalCost: totalCost,
-      totalTrips: trips.length,
-      businessTrips: businessTrips,
-      businessDistance: businessDistance,
-      businessCost: businessCost,
-      personalTrips: personalTrips,
-      personalDistance: personalDistance,
-      personalCost: personalCost,
-    );
+List<_ClientSlice> _buildClientSlices(List<Trip> trips, AppColors colors) {
+  final totals = <String, double>{};
+  for (final trip in trips) {
+    final isBusiness = TripType.fromString(trip.tripType) == TripType.business;
+    final key = isBusiness
+        ? (trip.companyName.trim().isEmpty
+            ? 'Business'
+            : trip.companyName.trim())
+        : 'Personal';
+    totals[key] = (totals[key] ?? 0) + trip.distanceKm;
   }
 
-  static const empty = _ReportStats(
-    totalDistance: 0,
-    totalCost: 0,
-    totalTrips: 0,
-    businessTrips: 0,
-    businessDistance: 0,
-    businessCost: 0,
-    personalTrips: 0,
-    personalDistance: 0,
-    personalCost: 0,
-  );
+  final entries = totals.entries.toList()
+    ..sort((a, b) => b.value.compareTo(a.value));
+
+  final palette = [colors.accent, colors.accentSecondary, colors.success];
+  var paletteIndex = 0;
+  final top = entries.take(AppConstants.reportTopCompanies).toList();
+  final rest = entries.skip(AppConstants.reportTopCompanies).toList();
+
+  final slices = <_ClientSlice>[];
+  for (final entry in top) {
+    final color = entry.key == 'Personal'
+        ? colors.personalTag
+        : palette[paletteIndex++ % palette.length];
+    slices.add(_ClientSlice(label: entry.key, km: entry.value, color: color));
+  }
+  if (rest.isNotEmpty) {
+    final otherKm = rest.fold<double>(0, (sum, e) => sum + e.value);
+    slices.add(
+        _ClientSlice(label: 'Other', km: otherKm, color: colors.textGhost));
+  }
+  return slices;
+}
+
+/// Per-day distance totals for a fixed 5-week (Mon–Sun) window ending on the
+/// current week — [AppConstants.heatmapCells] cells, independent of calendar
+/// month boundaries so the grid always lines up under the weekday headers.
+List<double> _heatmapWindowTotals(List<Trip> trips) {
+  final today = DateTime.now();
+  final todayDateOnly = DateTime(today.year, today.month, today.day);
+  final mondayThisWeek = todayDateOnly
+      .subtract(Duration(days: todayDateOnly.weekday - DateTime.monday));
+  const weeks = AppConstants.heatmapCells ~/ 7;
+  final gridStart =
+      mondayThisWeek.subtract(const Duration(days: (weeks - 1) * 7));
+
+  final totals = List<double>.filled(AppConstants.heatmapCells, 0);
+  for (final trip in trips) {
+    final date = DateTime.fromMillisecondsSinceEpoch(trip.startTime);
+    final dateOnly = DateTime(date.year, date.month, date.day);
+    final index = dateOnly.difference(gridStart).inDays;
+    if (index >= 0 && index < totals.length) {
+      totals[index] += trip.distanceKm;
+    }
+  }
+  return totals;
 }
 
 class ReportsTab extends ConsumerStatefulWidget {
@@ -101,7 +100,6 @@ class _ReportsTabState extends ConsumerState<ReportsTab> {
 
   Future<void> _handleExportPDF(List<Trip> trips, String periodLabel) async {
     if (trips.isEmpty) return;
-
     try {
       await _exportService.exportPdf(trips: trips, periodLabel: periodLabel);
     } catch (e) {
@@ -117,7 +115,6 @@ class _ReportsTabState extends ConsumerState<ReportsTab> {
 
   Future<void> _handleExportCSV(List<Trip> trips) async {
     if (trips.isEmpty) return;
-
     try {
       await _exportService.exportCsv(trips: trips);
     } catch (e) {
@@ -131,253 +128,127 @@ class _ReportsTabState extends ConsumerState<ReportsTab> {
     }
   }
 
-  (int, int) _getCurrentMonthRange() {
-    final now = DateTime.now();
-    final firstDayOfMonth = DateTime(now.year, now.month, 1);
-    final lastDayOfMonth = DateTime(now.year, now.month + 1, 0, 23, 59, 59, 999);
-    return (
-      firstDayOfMonth.millisecondsSinceEpoch,
-      lastDayOfMonth.millisecondsSinceEpoch,
-    );
-  }
-
-  String _getCurrentMonthName() {
-    return DateFormat('MMMM y').format(DateTime.now());
-  }
-
   List<Trip> _filterTripsByPeriod(List<Trip> trips, ReportPeriod period) {
-    if (period == ReportPeriod.allTime) {
-      return trips;
-    }
+    if (period == ReportPeriod.allTime) return trips;
+    return tripsInCurrentMonth(trips);
+  }
 
-    final (startMs, endMs) = _getCurrentMonthRange();
-    return trips.where((trip) {
-      return trip.startTime >= startMs && trip.startTime <= endMs;
-    }).toList();
+  String _periodLabel(bool isMonthly, List<Trip> allTrips) {
+    if (isMonthly) {
+      return DateFormat('MMM yyyy').format(DateTime.now()).toUpperCase();
+    }
+    if (allTrips.isEmpty) return 'ALL TIME';
+    var earliest = allTrips.first.startTime;
+    for (final trip in allTrips) {
+      if (trip.startTime < earliest) earliest = trip.startTime;
+    }
+    final date = DateTime.fromMillisecondsSinceEpoch(earliest);
+    return 'SINCE ${DateFormat('MMM yyyy').format(date).toUpperCase()}';
   }
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     final selectedPeriod = ref.watch(selectedReportPeriodProvider);
     final isMonthly = selectedPeriod == ReportPeriod.monthly;
     final completedTrips = ref.watch(completedTripsProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Reports'),
-      ),
       body: SafeArea(
         child: completedTrips.when(
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => Center(
-            child: Text('Error: $error'),
-          ),
+          error: (error, _) => Center(child: Text('Error: $error')),
           data: (allTrips) {
-            final filteredTrips = _filterTripsByPeriod(allTrips, selectedPeriod);
+            final filteredTrips =
+                _filterTripsByPeriod(allTrips, selectedPeriod);
             final stats = filteredTrips.isEmpty
-                ? _ReportStats.empty
-                : _ReportStats.fromTrips(filteredTrips);
+                ? TripStats.empty
+                : TripStats.fromTrips(filteredTrips);
+            final periodLabel = _periodLabel(isMonthly, allTrips);
 
-            return SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Period selector
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: _PeriodButton(
-                              label: 'This Month',
-                              isSelected: isMonthly,
-                              onTap: () {
-                                ref.read(selectedReportPeriodProvider.notifier).state =
-                                    ReportPeriod.monthly;
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _PeriodButton(
-                              label: 'All Time',
-                              isSelected: !isMonthly,
-                              onTap: () {
-                                ref.read(selectedReportPeriodProvider.notifier).state =
-                                    ReportPeriod.allTime;
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+            return ListView(
+              padding: const EdgeInsets.only(bottom: AppTheme.space24),
+              children: [
+                _Header(periodLabel: periodLabel),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppTheme.space16,
+                    0,
+                    AppTheme.space16,
+                    AppTheme.space14,
                   ),
-                  const SizedBox(height: 24),
-
-                  // Empty state
-                  if (filteredTrips.isEmpty) ...[
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(32),
-                        child: Column(
-                          children: [
-                            Icon(
-                              Icons.assessment_outlined,
-                              size: 64,
-                              color: Colors.grey[600],
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              isMonthly ? 'No Trips This Month' : 'No Trips Yet',
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    color: Colors.grey,
-                                  ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              isMonthly
-                                  ? 'Start tracking trips to see monthly reports'
-                                  : 'Start your first trip to see reports',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: Colors.grey,
-                                  ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
+                  child: _RangeToggle(
+                    isMonthly: isMonthly,
+                    onChanged: (monthly) => ref
+                            .read(selectedReportPeriodProvider.notifier)
+                            .state =
+                        monthly ? ReportPeriod.monthly : ReportPeriod.allTime,
+                  ),
+                ),
+                if (filteredTrips.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppTheme.space16),
+                    child: _EmptyReportsCard(isMonthly: isMonthly),
+                  )
+                else ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppTheme.space16),
+                    child: _TotalDrivenCard(stats: stats),
+                  ),
+                  if (isMonthly) ...[
+                    const _SectionLabel(title: 'DAILY ACTIVITY'),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppTheme.space16,
+                        0,
+                        AppTheme.space16,
+                        AppTheme.space8,
                       ),
-                    ),
-                  ] else ...[
-                    // Summary statistics
-                    Text(
-                      isMonthly ? _getCurrentMonthName() : 'All Time Summary',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Total distance and cost cards
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _StatCard(
-                            icon: Icons.route,
-                            label: 'Total Distance',
-                            value: '${stats.totalDistance.toStringAsFixed(1)} km',
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: _StatCard(
-                            icon: Icons.euro,
-                            label: 'Total Cost',
-                            value: '€${stats.totalCost.toStringAsFixed(2)}',
-                            color: Theme.of(context).colorScheme.secondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Trip count card
-                    _StatCard(
-                      icon: Icons.list_alt,
-                      label: 'Total Trips',
-                      value: '${stats.totalTrips} trip${stats.totalTrips == 1 ? '' : 's'}',
-                      color: Theme.of(context).colorScheme.tertiary,
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Breakdown by type
-                    Text(
-                      'Breakdown by Type',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          children: [
-                            if (stats.businessTrips > 0) ...[
-                              _BreakdownRow(
-                                type: 'BUSINESS',
-                                trips: stats.businessTrips,
-                                distance: '${stats.businessDistance.toStringAsFixed(1)} km',
-                                cost: '€${stats.businessCost.toStringAsFixed(2)}',
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                            ],
-                            if (stats.businessTrips > 0 && stats.personalTrips > 0) ...[
-                              const SizedBox(height: 16),
-                              Divider(color: Theme.of(context).dividerColor),
-                              const SizedBox(height: 16),
-                            ],
-                            if (stats.personalTrips > 0) ...[
-                              _BreakdownRow(
-                                type: 'PERSONAL',
-                                trips: stats.personalTrips,
-                                distance: '${stats.personalDistance.toStringAsFixed(1)} km',
-                                cost: '€${stats.personalCost.toStringAsFixed(2)}',
-                                color: Theme.of(context).colorScheme.secondary,
-                              ),
-                            ],
-                            if (stats.businessTrips == 0 && stats.personalTrips == 0)
-                              Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Text(
-                                  'No breakdown available',
-                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                        color: Colors.grey,
-                                      ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 32),
-
-                    // Export buttons
-                    Text(
-                      'Export Options',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    ElevatedButton.icon(
-                      onPressed: () => _handleExportPDF(
-                        filteredTrips,
-                        isMonthly ? _getCurrentMonthName() : 'All Time Summary',
-                      ),
-                      icon: const Icon(Icons.picture_as_pdf),
-                      label: const Text('Export as PDF'),
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    OutlinedButton.icon(
-                      onPressed: () => _handleExportCSV(filteredTrips),
-                      icon: const Icon(Icons.table_chart),
-                      label: const Text('Export as CSV'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      child: _HeatmapCard(
+                        daily: _heatmapWindowTotals(allTrips),
                       ),
                     ),
                   ],
+                  const _SectionLabel(title: 'BY CLIENT'),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppTheme.space16),
+                    child: _ClientCard(
+                        slices: _buildClientSlices(filteredTrips, colors)),
+                  ),
                 ],
-              ),
+                const _SectionLabel(title: 'EXPORT'),
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: AppTheme.space16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _ExportButton(
+                          icon: Icons.picture_as_pdf_outlined,
+                          label: 'PDF',
+                          sub: 'Tax-ready',
+                          enabled: filteredTrips.isNotEmpty,
+                          onTap: () =>
+                              _handleExportPDF(filteredTrips, periodLabel),
+                        ),
+                      ),
+                      const SizedBox(width: AppTheme.space10),
+                      Expanded(
+                        child: _ExportButton(
+                          icon: Icons.table_chart_outlined,
+                          label: 'CSV',
+                          sub: 'Spreadsheet',
+                          enabled: filteredTrips.isNotEmpty,
+                          onTap: () => _handleExportCSV(filteredTrips),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             );
           },
         ),
@@ -386,38 +257,99 @@ class _ReportsTabState extends ConsumerState<ReportsTab> {
   }
 }
 
-class _PeriodButton extends StatelessWidget {
-  const _PeriodButton({
+class _Header extends StatelessWidget {
+  const _Header({required this.periodLabel});
+
+  final String periodLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppTheme.space20,
+        AppTheme.space14,
+        AppTheme.space20,
+        AppTheme.space10,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(periodLabel, style: Theme.of(context).textTheme.labelSmall),
+          const SizedBox(height: AppTheme.space4),
+          Text('Reports', style: Theme.of(context).textTheme.headlineMedium),
+        ],
+      ),
+    );
+  }
+}
+
+class _RangeToggle extends StatelessWidget {
+  const _RangeToggle({required this.isMonthly, required this.onChanged});
+
+  final bool isMonthly;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: colors.surfaceElevated,
+        border: Border.all(color: colors.border),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _RangeToggleButton(
+              label: 'This month',
+              selected: isMonthly,
+              onTap: () => onChanged(true),
+            ),
+          ),
+          Expanded(
+            child: _RangeToggleButton(
+              label: 'All time',
+              selected: !isMonthly,
+              onTap: () => onChanged(false),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RangeToggleButton extends StatelessWidget {
+  const _RangeToggleButton({
     required this.label,
-    required this.isSelected,
+    required this.selected,
     required this.onTap,
   });
 
   final String label;
-  final bool isSelected;
+  final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(9),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: AppTheme.space10),
         decoration: BoxDecoration(
-          color: isSelected
-              ? Theme.of(context).colorScheme.primary
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          color: selected ? colors.accentTint : Colors.transparent,
+          borderRadius: BorderRadius.circular(9),
         ),
         child: Text(
           label,
           textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: isSelected
-                    ? Theme.of(context).colorScheme.onPrimary
-                    : Colors.grey,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: selected ? colors.accent : colors.textDim,
               ),
         ),
       ),
@@ -425,145 +357,577 @@ class _PeriodButton extends StatelessWidget {
   }
 }
 
-class _StatCard extends StatelessWidget {
-  const _StatCard({
-    required this.icon,
+class _TotalDrivenCard extends StatelessWidget {
+  const _TotalDrivenCard({required this.stats});
+
+  final TripStats stats;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    final avgRate = stats.businessDistance > 0
+        ? stats.businessCost / stats.businessDistance
+        : AppConstants.defaultMileageRate;
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(AppTheme.space20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('TOTAL DRIVEN', style: Theme.of(context).textTheme.labelSmall),
+            const SizedBox(height: AppTheme.space10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(
+                  stats.totalDistance.toStringAsFixed(1),
+                  style: Theme.of(context).textTheme.displayMedium,
+                ),
+                const SizedBox(width: AppTheme.space8),
+                Text('km',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyLarge
+                        ?.copyWith(color: colors.textDim)),
+              ],
+            ),
+            const SizedBox(height: AppTheme.space18),
+            const _DashedDivider(),
+            Padding(
+              padding: const EdgeInsets.only(top: AppTheme.space16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _Stat(
+                      label: 'BUSINESS',
+                      value: stats.businessDistance.toStringAsFixed(1),
+                      unit: 'km',
+                      accent: true,
+                    ),
+                  ),
+                  Expanded(
+                    child: _Stat(
+                      label: 'PERSONAL',
+                      value: stats.personalDistance.toStringAsFixed(1),
+                      unit: 'km',
+                    ),
+                  ),
+                  Expanded(
+                    child: _Stat(
+                      label: 'TRIPS',
+                      value: '${stats.totalTrips}',
+                      unit: '',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (stats.businessCost > 0) ...[
+              const SizedBox(height: AppTheme.space14),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.space14,
+                  vertical: AppTheme.space10,
+                ),
+                decoration: BoxDecoration(
+                  color: colors.accentTint,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'REIMBURSABLE',
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelMedium
+                              ?.copyWith(color: colors.accent),
+                        ),
+                        Text(
+                          '${AppConstants.defaultCurrencySymbol}${stats.businessCost.toStringAsFixed(2)}',
+                          style:
+                              Theme.of(context).textTheme.titleLarge?.copyWith(
+                                    color: colors.accent,
+                                    fontSize: 22,
+                                  ),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      '@ ${avgRate.toStringAsFixed(2)}\n${AppConstants.defaultCurrencySymbol}/KM',
+                      textAlign: TextAlign.right,
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelMedium
+                          ?.copyWith(color: colors.accent),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Stat extends StatelessWidget {
+  const _Stat({
     required this.label,
     required this.value,
-    required this.color,
+    required this.unit,
+    this.accent = false,
   });
 
-  final IconData icon;
   final String label;
   final String value;
+  final String unit;
+  final bool accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: Theme.of(context).textTheme.labelSmall),
+        const SizedBox(height: AppTheme.space4),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(
+              value,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: accent ? colors.accent : colors.textPrimary,
+                  ),
+            ),
+            if (unit.isNotEmpty) ...[
+              const SizedBox(width: AppTheme.space4),
+              Text(unit,
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: colors.textDimmer)),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _DashedDivider extends StatelessWidget {
+  const _DashedDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 1,
+      width: double.infinity,
+      child: CustomPaint(
+        painter:
+            _DashedDividerPainter(color: AppColors.of(context).borderStrong),
+      ),
+    );
+  }
+}
+
+class _DashedDividerPainter extends CustomPainter {
+  _DashedDividerPainter({required this.color});
+
   final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1;
+    const dash = 4.0;
+    const gap = 4.0;
+    var x = 0.0;
+    while (x < size.width) {
+      canvas.drawLine(
+          Offset(x, 0), Offset(math.min(x + dash, size.width), 0), paint);
+      x += dash + gap;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedDividerPainter oldDelegate) =>
+      oldDelegate.color != color;
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppTheme.space20,
+        AppTheme.space20,
+        AppTheme.space20,
+        AppTheme.space8,
+      ),
+      child: Text(title, style: Theme.of(context).textTheme.labelSmall),
+    );
+  }
+}
+
+class _HeatmapCard extends StatelessWidget {
+  const _HeatmapCard({required this.daily});
+
+  final List<double> daily;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    final maxValue = daily.fold<double>(0, math.max);
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(AppTheme.space18),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                for (final label in const ['M', 'T', 'W', 'T', 'F', 'S', 'S'])
+                  Expanded(
+                    child: Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppTheme.space10),
+            GridView.count(
+              crossAxisCount: 7,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: AppTheme.space4,
+              crossAxisSpacing: AppTheme.space4,
+              children: [
+                for (final value in daily)
+                  _HeatCell(
+                    intensity:
+                        maxValue > 0 ? (value / maxValue).clamp(0.0, 1.0) : 0.0,
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppTheme.space10),
+            Row(
+              children: [
+                Text('LESS', style: Theme.of(context).textTheme.labelSmall),
+                const SizedBox(width: AppTheme.space8),
+                for (final alpha in const [0.2, 0.4, 0.6, 0.8, 1.0])
+                  Padding(
+                    padding: const EdgeInsets.only(right: AppTheme.space4),
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: colors.accent.withValues(alpha: alpha),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                const SizedBox(width: AppTheme.space4),
+                Text('MORE', style: Theme.of(context).textTheme.labelSmall),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HeatCell extends StatelessWidget {
+  const _HeatCell({required this.intensity});
+
+  final double intensity;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    final hasValue = intensity > 0;
+    return Container(
+      decoration: BoxDecoration(
+        color: hasValue
+            ? colors.accent.withValues(alpha: 0.2 + intensity * 0.8)
+            : colors.surfaceInset,
+        border: hasValue ? null : Border.all(color: colors.border),
+        borderRadius: BorderRadius.circular(4),
+      ),
+    );
+  }
+}
+
+class _ClientCard extends StatelessWidget {
+  const _ClientCard({required this.slices});
+
+  final List<_ClientSlice> slices;
 
   @override
   Widget build(BuildContext context) {
     return Card(
+      margin: EdgeInsets.zero,
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: const EdgeInsets.all(AppTheme.space18),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Icon(
-              icon,
-              color: color,
-              size: 32,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              label,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.grey,
-                  ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              value,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: color,
-                  ),
+            _DonutChart(slices: slices),
+            const SizedBox(width: AppTheme.space16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final slice in slices)
+                    _ClientLegendRow(slice: slice, total: _total),
+                ],
+              ),
             ),
           ],
         ),
       ),
     );
   }
+
+  double get _total => slices.fold<double>(0, (sum, s) => sum + s.km);
 }
 
-class _BreakdownRow extends StatelessWidget {
-  const _BreakdownRow({
-    required this.type,
-    required this.trips,
-    required this.distance,
-    required this.cost,
-    required this.color,
-  });
+class _ClientLegendRow extends StatelessWidget {
+  const _ClientLegendRow({required this.slice, required this.total});
 
-  final String type;
-  final int trips;
-  final String distance;
-  final String cost;
-  final Color color;
+  final _ClientSlice slice;
+  final double total;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 6,
+    final pct = total > 0 ? (slice.km / total * 100).round() : 0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppTheme.space4),
+      child: Row(
+        children: [
+          Container(
+            width: 9,
+            height: 9,
+            decoration: BoxDecoration(
+              color: slice.color,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: AppTheme.space8),
+          Expanded(
+            child: Text(
+              slice.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+          Text('$pct%', style: Theme.of(context).textTheme.labelMedium),
+        ],
+      ),
+    );
+  }
+}
+
+class _DonutChart extends StatelessWidget {
+  const _DonutChart({required this.slices});
+
+  final List<_ClientSlice> slices;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = slices.fold<double>(0, (sum, s) => sum + s.km);
+    return SizedBox(
+      width: 104,
+      height: 104,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          CustomPaint(
+            size: const Size(104, 104),
+            painter: _DonutPainter(
+              slices: slices,
+              backgroundColor: AppColors.of(context).surfaceInset,
+            ),
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('TOTAL', style: Theme.of(context).textTheme.labelSmall),
+              const SizedBox(height: AppTheme.space4),
+              Text(
+                total.toStringAsFixed(0),
+                style: Theme.of(context).textTheme.titleMedium,
               ),
-              decoration: BoxDecoration(
-                color: color.withAlpha(30),
-                borderRadius: BorderRadius.circular(8),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DonutPainter extends CustomPainter {
+  _DonutPainter({required this.slices, required this.backgroundColor});
+
+  final List<_ClientSlice> slices;
+  final Color backgroundColor;
+
+  static const _strokeWidth = 14.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = (size.shortestSide - _strokeWidth) / 2;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..color = backgroundColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = _strokeWidth,
+    );
+
+    final total = slices.fold<double>(0, (sum, s) => sum + s.km);
+    if (total <= 0) return;
+
+    var startAngle = -math.pi / 2;
+    for (final slice in slices) {
+      final sweep = (slice.km / total) * 2 * math.pi;
+      canvas.drawArc(
+        rect,
+        startAngle,
+        sweep,
+        false,
+        Paint()
+          ..color = slice.color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = _strokeWidth,
+      );
+      startAngle += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DonutPainter oldDelegate) =>
+      oldDelegate.slices != slices ||
+      oldDelegate.backgroundColor != backgroundColor;
+}
+
+class _ExportButton extends StatelessWidget {
+  const _ExportButton({
+    required this.icon,
+    required this.label,
+    required this.sub,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final String sub;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return Opacity(
+      opacity: enabled ? 1 : 0.5,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(AppTheme.space14),
+          decoration: BoxDecoration(
+            color: colors.surfaceElevated,
+            border: Border.all(color: colors.border),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: colors.accentTint,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: colors.accent, size: 18),
               ),
-              child: Text(
-                type,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: color,
-                      fontWeight: FontWeight.bold,
+              const SizedBox(height: AppTheme.space8),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
                     ),
               ),
-            ),
-            Text(
-              '$trips trips',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.grey,
-                  ),
-            ),
-          ],
+              const SizedBox(height: AppTheme.space4),
+              Text(sub, style: Theme.of(context).textTheme.labelMedium),
+            ],
+          ),
         ),
-        const SizedBox(height: 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      ),
+    );
+  }
+}
+
+class _EmptyReportsCard extends StatelessWidget {
+  const _EmptyReportsCard({required this.isMonthly});
+
+  final bool isMonthly;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(AppTheme.space24),
+        child: Column(
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Distance',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.grey,
-                      ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  distance,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                ),
-              ],
+            Icon(Icons.assessment_outlined, size: 40, color: colors.textGhost),
+            const SizedBox(height: AppTheme.space14),
+            Text(
+              isMonthly ? 'No trips this month' : 'No trips yet',
+              style: Theme.of(context).textTheme.bodyLarge,
             ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  'Cost',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.grey,
-                      ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  cost,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                ),
-              ],
+            const SizedBox(height: AppTheme.space4),
+            Text(
+              isMonthly
+                  ? 'Start tracking trips to see monthly reports'
+                  : 'Start your first trip to see reports',
+              textAlign: TextAlign.center,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: colors.textDim),
             ),
           ],
         ),
-      ],
+      ),
     );
   }
 }
