@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -9,11 +10,15 @@ import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/theme_providers.dart';
 import '../../../data/database/app_database.dart';
+import '../../../data/providers/repository_providers.dart';
 import '../../../data/services/bluetooth_service.dart';
 import '../../../data/services/session_service.dart';
 import '../../vehicles/providers/vehicles_list_provider.dart';
 import '../../workplaces/providers/workplaces_list_provider.dart';
+import '../providers/bluetooth_auto_tracking_enabled_provider.dart';
+import '../providers/currency_provider.dart';
 import '../providers/default_mileage_rate_provider.dart';
+import '../providers/profile_provider.dart';
 
 final highAccuracyGPSProvider = StateProvider<bool>((ref) => true);
 final idleDetectionProvider = StateProvider<bool>((ref) => true);
@@ -29,6 +34,17 @@ final _locationPermissionProvider =
 final _bluetoothPermissionProvider = FutureProvider.autoDispose<bool>(
   (ref) => BluetoothService.hasPermission(),
 );
+
+/// The vehicle the odometer section corrects — the one marked default, or
+/// just the first vehicle when none is, so the section still has something
+/// to show for a single-vehicle household that never bothered to flip it.
+Vehicle? _defaultVehicleFrom(List<Vehicle> list) {
+  if (list.isEmpty) return null;
+  for (final vehicle in list) {
+    if (vehicle.isDefault) return vehicle;
+  }
+  return list.first;
+}
 
 class SettingsTab extends ConsumerStatefulWidget {
   const SettingsTab({super.key});
@@ -73,12 +89,35 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
 
   Future<void> _handleBluetoothPermission() async {
     final status = await Permission.bluetoothConnect.status;
-    if (status.isPermanentlyDenied) {
+    if (status.isGranted || status.isPermanentlyDenied) {
+      // Android never lets an app revoke its own permission grant — hand
+      // off to the system App Info screen so the user can turn it off
+      // themselves (see Settings → Permissions → Bluetooth access).
       await openAppSettings();
     } else {
       await Permission.bluetoothConnect.request();
     }
     ref.invalidate(_bluetoothPermissionProvider);
+  }
+
+  Future<void> _handleEditOdometer(Vehicle vehicle) async {
+    final saved = await showModalBottomSheet<double>(
+      context: context,
+      backgroundColor: AppColors.of(context).surfaceElevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(AppTheme.cardRadius)),
+      ),
+      isScrollControlled: true,
+      builder: (context) => _OdometerEditorSheet(
+        vehicleName: vehicle.name,
+        initialReading: vehicle.lastOdometer,
+      ),
+    );
+    if (saved == null) return;
+    await ref
+        .read(vehicleRepositoryProvider)
+        .setOdometerReading(vehicle.id, saved);
   }
 
   Future<void> _handleEditRate() async {
@@ -97,6 +136,32 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
     if (saved != null) {
       await ref.read(defaultMileageRateProvider.notifier).setRate(saved);
     }
+  }
+
+  Future<void> _handleEditCurrency() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.of(context).surfaceElevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(AppTheme.cardRadius)),
+      ),
+      isScrollControlled: true,
+      builder: (context) => const _CurrencySheet(),
+    );
+  }
+
+  Future<void> _handleEditProfile() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.of(context).surfaceElevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(AppTheme.cardRadius)),
+      ),
+      isScrollControlled: true,
+      builder: (context) => const _ProfileSheet(),
+    );
   }
 
   Future<void> _handleEditTheme() async {
@@ -129,18 +194,25 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
     final highAccuracyGPS = ref.watch(highAccuracyGPSProvider);
     final idleDetection = ref.watch(idleDetectionProvider);
     final rate = ref.watch(defaultMileageRateProvider);
+    final currency = ref.watch(currencyCodeProvider);
     final vehicles = ref.watch(vehiclesListProvider);
     final workplaces = ref.watch(workplacesListProvider);
     final packageInfo = ref.watch(_packageInfoProvider);
     final locationPermission = ref.watch(_locationPermissionProvider);
     final bluetoothPermission = ref.watch(_bluetoothPermissionProvider);
+    final bluetoothAutoTracking =
+        ref.watch(bluetoothAutoTrackingEnabledProvider);
     final themeMode = ref.watch(themeModeProvider);
     final palette = ref.watch(paletteProvider);
+    final profile = ref.watch(profileProvider);
 
     return Scaffold(
       body: SafeArea(
+        bottom: false,
         child: ListView(
-          padding: const EdgeInsets.only(bottom: AppTheme.space24),
+          padding: EdgeInsets.only(
+            bottom: AppTheme.space24 + MediaQuery.of(context).padding.bottom,
+          ),
           children: [
             _Header(packageInfo: packageInfo),
             if (bluetoothPermission.value == false)
@@ -177,6 +249,16 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                     onChanged: (value) =>
                         ref.read(idleDetectionProvider.notifier).state = value,
                   ),
+                  _ToggleRow(
+                    icon: Icons.bluetooth,
+                    title: 'Bluetooth Auto-Tracking',
+                    subtitle: 'Start/pause trips when a paired vehicle '
+                        'connects or disconnects',
+                    value: bluetoothAutoTracking.value ?? true,
+                    onChanged: (value) => ref
+                        .read(bluetoothAutoTrackingEnabledProvider.notifier)
+                        .setEnabled(value),
+                  ),
                   _SettingRow(
                     icon: Icons.payments_outlined,
                     title: 'Mileage rate',
@@ -184,7 +266,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                     onTap: _handleEditRate,
                     trailing: Text(
                       rate.when(
-                        data: (value) => '€${value.toStringAsFixed(2)}',
+                        data: (value) =>
+                            '${value.toStringAsFixed(2)} $currency',
                         loading: () => '—',
                         error: (_, __) => '—',
                       ),
@@ -192,6 +275,25 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                             color: colors.accent,
                             fontWeight: FontWeight.w600,
                           ),
+                    ),
+                  ),
+                  _SettingRow(
+                    icon: Icons.currency_exchange,
+                    title: 'Currency',
+                    subtitle: 'Used in reports and cost calculations',
+                    onTap: _handleEditCurrency,
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          currency,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(color: colors.textDim),
+                        ),
+                        Icon(Icons.chevron_right, color: colors.textDimmer),
+                      ],
                     ),
                   ),
                   _SettingRow(
@@ -306,6 +408,50 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                 ],
               ),
             ),
+            const _SectionLabel(title: 'ODOMETER'),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppTheme.space16),
+              child: _SettingsCard(
+                children: [
+                  vehicles.when(
+                    data: (list) {
+                      final vehicle = _defaultVehicleFrom(list);
+                      if (vehicle == null) {
+                        return const _SettingRow(
+                          icon: Icons.speed_outlined,
+                          title: 'No vehicle set',
+                          subtitle: 'Add a vehicle first to track its odometer',
+                          isLast: true,
+                        );
+                      }
+                      return _SettingRow(
+                        icon: Icons.speed_outlined,
+                        title: vehicle.name,
+                        subtitle:
+                            '${NumberFormat('#,##0').format(vehicle.lastOdometer)} km '
+                            '· Tap to correct',
+                        trailing:
+                            Icon(Icons.chevron_right, color: colors.textDimmer),
+                        onTap: () => _handleEditOdometer(vehicle),
+                        isLast: true,
+                      );
+                    },
+                    loading: () => const _SettingRow(
+                      icon: Icons.speed_outlined,
+                      title: 'Odometer',
+                      subtitle: 'Loading…',
+                      isLast: true,
+                    ),
+                    error: (_, __) => const _SettingRow(
+                      icon: Icons.speed_outlined,
+                      title: 'Odometer',
+                      subtitle: 'Unavailable',
+                      isLast: true,
+                    ),
+                  ),
+                ],
+              ),
+            ),
             const _SectionLabel(title: 'PERMISSIONS'),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppTheme.space16),
@@ -348,13 +494,14 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                   _SettingRow(
                     icon: Icons.bluetooth,
                     title: 'Bluetooth access',
-                    subtitle: 'Needed for vehicle auto-start tracking',
-                    isLast: true,
-                    onTap: bluetoothPermission.maybeWhen(
-                      data: (granted) =>
-                          granted ? null : _handleBluetoothPermission,
-                      orElse: () => null,
+                    subtitle: bluetoothPermission.maybeWhen(
+                      data: (granted) => granted
+                          ? 'Tap to manage in system settings'
+                          : 'Needed for vehicle auto-start tracking',
+                      orElse: () => 'Needed for vehicle auto-start tracking',
                     ),
+                    isLast: true,
+                    onTap: _handleBluetoothPermission,
                     trailing: bluetoothPermission.when(
                       data: (granted) => _StatusChip(
                         label: granted ? 'Granted' : 'Needs review',
@@ -368,6 +515,25 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                       error: (_, __) => const _StatusChip(
                           label: 'Unknown', tone: _ChipTone.warning),
                     ),
+                  ),
+                ],
+              ),
+            ),
+            const _SectionLabel(title: 'PROFILE'),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppTheme.space16),
+              child: _SettingsCard(
+                children: [
+                  _SettingRow(
+                    icon: Icons.business_outlined,
+                    title: 'Company / Name',
+                    subtitle: profile.name.isEmpty
+                        ? 'Appears on PDF report cover'
+                        : profile.name,
+                    trailing:
+                        Icon(Icons.chevron_right, color: colors.textDimmer),
+                    onTap: _handleEditProfile,
+                    isLast: true,
                   ),
                 ],
               ),
@@ -687,6 +853,147 @@ class _PermissionBanner extends StatelessWidget {
   }
 }
 
+class _OdometerEditorSheet extends StatefulWidget {
+  const _OdometerEditorSheet({
+    required this.vehicleName,
+    required this.initialReading,
+  });
+
+  final String vehicleName;
+  final double initialReading;
+
+  @override
+  State<_OdometerEditorSheet> createState() => _OdometerEditorSheetState();
+}
+
+class _OdometerEditorSheetState extends State<_OdometerEditorSheet> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller =
+        TextEditingController(text: widget.initialReading.toStringAsFixed(0));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final value = double.tryParse(_controller.text.replaceAll(',', '.'));
+    if (value == null || value < 0) return;
+    Navigator.of(context).pop(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        AppTheme.space20,
+        AppTheme.space20,
+        AppTheme.space20,
+        AppTheme.space20 + MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Correct odometer',
+              style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: AppTheme.space4),
+          Text(
+            widget.vehicleName,
+            style: Theme.of(context)
+                .textTheme
+                .bodyMedium
+                ?.copyWith(color: colors.textDim),
+          ),
+          const SizedBox(height: AppTheme.space18),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              vertical: AppTheme.space20,
+              horizontal: AppTheme.space16,
+            ),
+            decoration: BoxDecoration(
+              color: colors.surfaceInset,
+              border: Border.all(color: colors.border),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                SizedBox(
+                  width: 170,
+                  child: TextField(
+                    controller: _controller,
+                    textAlign: TextAlign.center,
+                    autofocus: true,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                          color: colors.accent,
+                        ),
+                    decoration: const InputDecoration(
+                      isCollapsed: true,
+                      border: InputBorder.none,
+                      filled: false,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppTheme.space8),
+                Text('km',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyLarge
+                        ?.copyWith(color: colors.textDim)),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppTheme.space18),
+          Text(
+            "Corrects this vehicle's current reading. Past trips are kept "
+            'exactly as recorded — only the starting point of the odometer '
+            'chain shifts to match.',
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: colors.textDim),
+          ),
+          const SizedBox(height: AppTheme.space20),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: OutlinedButton.styleFrom(
+                    padding:
+                        const EdgeInsets.symmetric(vertical: AppTheme.space14),
+                    side: BorderSide(color: colors.border),
+                  ),
+                  child: const Text('Cancel'),
+                ),
+              ),
+              const SizedBox(width: AppTheme.space10),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: _save,
+                  child: const Text('Save'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _RateEditorSheet extends ConsumerStatefulWidget {
   const _RateEditorSheet({required this.initialRate});
 
@@ -723,6 +1030,7 @@ class _RateEditorSheetState extends ConsumerState<_RateEditorSheet> {
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
+    final currency = ref.watch(currencyCodeProvider);
     return Padding(
       padding: EdgeInsets.fromLTRB(
         AppTheme.space20,
@@ -753,14 +1061,8 @@ class _RateEditorSheetState extends ConsumerState<_RateEditorSheet> {
                   crossAxisAlignment: CrossAxisAlignment.baseline,
                   textBaseline: TextBaseline.alphabetic,
                   children: [
-                    Text('€',
-                        style: Theme.of(context)
-                            .textTheme
-                            .displayMedium
-                            ?.copyWith(color: colors.accent, fontSize: 40)),
-                    const SizedBox(width: AppTheme.space8),
                     SizedBox(
-                      width: 110,
+                      width: 170,
                       child: TextField(
                         controller: _controller,
                         textAlign: TextAlign.center,
@@ -768,7 +1070,7 @@ class _RateEditorSheetState extends ConsumerState<_RateEditorSheet> {
                             decimal: true),
                         style: Theme.of(context)
                             .textTheme
-                            .displayMedium
+                            .displaySmall
                             ?.copyWith(color: colors.accent),
                         decoration: const InputDecoration(
                           isCollapsed: true,
@@ -780,7 +1082,7 @@ class _RateEditorSheetState extends ConsumerState<_RateEditorSheet> {
                   ],
                 ),
                 const SizedBox(height: AppTheme.space4),
-                Text('PER KM',
+                Text('$currency / KM',
                     style: Theme.of(context)
                         .textTheme
                         .labelMedium
@@ -795,7 +1097,7 @@ class _RateEditorSheetState extends ConsumerState<_RateEditorSheet> {
             children: [
               for (final preset in _presets)
                 _RatePresetChip(
-                  label: '€$preset',
+                  label: preset,
                   selected: _controller.text == preset,
                   onTap: () => setState(() => _controller.text = preset),
                 ),
@@ -803,7 +1105,9 @@ class _RateEditorSheetState extends ConsumerState<_RateEditorSheet> {
           ),
           const SizedBox(height: AppTheme.space18),
           Text(
-            'Used when a vehicle has no rate of its own set in its profile.',
+            'Used when a vehicle has no rate of its own set in its profile. '
+            'Applies to business trips only — personal trips are never '
+            'reimbursed.',
             style: Theme.of(context)
                 .textTheme
                 .bodySmall
@@ -1054,6 +1358,176 @@ class _PaletteSheet extends ConsumerWidget {
             },
           ),
           const SizedBox(height: AppTheme.space10),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileSheet extends ConsumerStatefulWidget {
+  const _ProfileSheet();
+
+  @override
+  ConsumerState<_ProfileSheet> createState() => _ProfileSheetState();
+}
+
+class _ProfileSheetState extends ConsumerState<_ProfileSheet> {
+  late final TextEditingController _nameCtrl;
+  late final TextEditingController _addressCtrl;
+  late final TextEditingController _phoneCtrl;
+  late final TextEditingController _emailCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    final profile = ref.read(profileProvider);
+    _nameCtrl = TextEditingController(text: profile.name);
+    _addressCtrl = TextEditingController(text: profile.address);
+    _phoneCtrl = TextEditingController(text: profile.phone);
+    _emailCtrl = TextEditingController(text: profile.email);
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _addressCtrl.dispose();
+    _phoneCtrl.dispose();
+    _emailCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    await ref.read(profileProvider.notifier).update(
+          ProfileData(
+            name: _nameCtrl.text.trim(),
+            address: _addressCtrl.text.trim(),
+            phone: _phoneCtrl.text.trim(),
+            email: _emailCtrl.text.trim(),
+          ),
+        );
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        AppTheme.space20,
+        AppTheme.space20,
+        AppTheme.space20,
+        AppTheme.space20 + MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Profile', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: AppTheme.space4),
+            Text(
+              'Used on the PDF report cover page',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: AppColors.of(context).textDim),
+            ),
+            const SizedBox(height: AppTheme.space18),
+            TextField(
+              controller: _nameCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Company / Full name',
+              ),
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: AppTheme.space14),
+            TextField(
+              controller: _addressCtrl,
+              decoration: const InputDecoration(labelText: 'Address'),
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: AppTheme.space14),
+            TextField(
+              controller: _phoneCtrl,
+              decoration: const InputDecoration(labelText: 'Phone'),
+              keyboardType: TextInputType.phone,
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: AppTheme.space14),
+            TextField(
+              controller: _emailCtrl,
+              decoration: const InputDecoration(labelText: 'Email'),
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _save(),
+            ),
+            const SizedBox(height: AppTheme.space20),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: AppTheme.space14),
+                      side: BorderSide(
+                          color: AppColors.of(context).border),
+                    ),
+                    child: const Text('Cancel'),
+                  ),
+                ),
+                const SizedBox(width: AppTheme.space10),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _save,
+                    child: const Text('Save'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CurrencySheet extends ConsumerWidget {
+  const _CurrencySheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final current = ref.watch(currencyCodeProvider);
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.75,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SheetTitle(title: 'Currency'),
+          Flexible(
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: supportedCurrencies.length,
+              itemBuilder: (context, i) => _RadioRow(
+                label: '${supportedCurrencies[i].$1}  —  '
+                    '${supportedCurrencies[i].$2}',
+                selected: current == supportedCurrencies[i].$1,
+                isLast: i == supportedCurrencies.length - 1,
+                onTap: () {
+                  ref
+                      .read(currencyCodeProvider.notifier)
+                      .setCurrency(supportedCurrencies[i].$1);
+                  Navigator.of(context).pop();
+                },
+              ),
+            ),
+          ),
+          SizedBox(
+            height:
+                AppTheme.space10 + MediaQuery.of(context).padding.bottom,
+          ),
         ],
       ),
     );

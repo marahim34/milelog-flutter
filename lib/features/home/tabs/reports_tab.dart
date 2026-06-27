@@ -8,14 +8,32 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/database/app_database.dart';
 import '../../../data/models/trip_type.dart';
+import '../../../data/providers/repository_providers.dart';
 import '../../reports/services/report_export_service.dart';
 import '../providers/completed_trips_provider.dart';
+import '../providers/currency_provider.dart';
+import '../providers/profile_provider.dart';
 import '../utils/trip_stats.dart';
 
-enum ReportPeriod { monthly, allTime }
+enum ReportPeriod { monthly, allTime, custom }
 
 final selectedReportPeriodProvider =
     StateProvider<ReportPeriod>((ref) => ReportPeriod.monthly);
+
+/// Only meaningful when [selectedReportPeriodProvider] is
+/// [ReportPeriod.custom] — null until the user picks a range or taps a
+/// "previous month" chip.
+final selectedDateRangeProvider = StateProvider<DateTimeRange?>((ref) => null);
+
+/// The last [count] full calendar months, most recent first, excluding the
+/// current month (already covered by "This month") — feeds the "Previous
+/// months" quick selector.
+List<DateTime> _recentMonths(int count) {
+  final now = DateTime.now();
+  return [
+    for (var i = 1; i <= count; i++) DateTime(now.year, now.month - i, 1),
+  ];
+}
 
 /// One slice of the "by client" donut — a company name for business trips,
 /// 'Personal' for personal trips, or 'Other' once [AppConstants.reportTopCompanies]
@@ -98,76 +116,231 @@ class ReportsTab extends ConsumerStatefulWidget {
 class _ReportsTabState extends ConsumerState<ReportsTab> {
   final _exportService = ReportExportService();
 
-  Future<void> _handleExportPDF(List<Trip> trips, String periodLabel) async {
+  Future<void> _handleExportPDF(
+    List<Trip> trips,
+    String periodLabel,
+    String currency,
+  ) async {
     if (trips.isEmpty) return;
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Export PDF'),
+        content: const Text('How would you like to export this report?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'share'),
+            child: const Text('Share'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'download'),
+            child: const Text('Download to device'),
+          ),
+        ],
+      ),
+    );
+    if (action == null || !mounted) return;
     try {
-      await _exportService.exportPdf(trips: trips, periodLabel: periodLabel);
+      final repo = ref.read(tripRepositoryProvider);
+      final waypointResults = await Future.wait(
+        trips.map((t) => repo.getWaypointsForTrip(t.id)),
+      );
+      final waypointsMap = {
+        for (var i = 0; i < trips.length; i++) trips[i].id: waypointResults[i],
+      };
+      if (!mounted) return;
+      final profile = ref.read(profileProvider);
+      final result = await _exportService.generatePdf(
+        trips: trips,
+        periodLabel: periodLabel,
+        currency: currency,
+        waypoints: waypointsMap,
+        profileName: profile.name,
+        profileAddress: profile.address,
+        profilePhone: profile.phone,
+        profileEmail: profile.email,
+      );
+      if (!mounted) return;
+      if (action == 'download') {
+        final ok =
+            await _exportService.downloadToDevice(result.filename, result.bytes);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+            ok
+                ? 'Saved to Downloads/${result.filename}'
+                : 'Download failed — sharing instead',
+          ),
+        ));
+        if (!ok) await _exportService.shareFile(result.filename, result.bytes);
+      } else {
+        await _exportService.shareFile(result.filename, result.bytes);
+      }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('PDF export failed: $e'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('PDF export failed: $e'),
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ));
     }
   }
 
   Future<void> _handleExportCSV(List<Trip> trips) async {
     if (trips.isEmpty) return;
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Export CSV'),
+        content: const Text('How would you like to export this data?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'share'),
+            child: const Text('Share'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'download'),
+            child: const Text('Download to device'),
+          ),
+        ],
+      ),
+    );
+    if (action == null || !mounted) return;
     try {
-      await _exportService.exportCsv(trips: trips);
+      final result = await _exportService.generateCsv(trips: trips);
+      if (!mounted) return;
+      if (action == 'download') {
+        final ok =
+            await _exportService.downloadToDevice(result.filename, result.bytes);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+            ok
+                ? 'Saved to Downloads/${result.filename}'
+                : 'Download failed — sharing instead',
+          ),
+        ));
+        if (!ok) await _exportService.shareFile(result.filename, result.bytes);
+      } else {
+        await _exportService.shareFile(result.filename, result.bytes);
+      }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('CSV export failed: $e'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('CSV export failed: $e'),
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ));
     }
   }
 
-  List<Trip> _filterTripsByPeriod(List<Trip> trips, ReportPeriod period) {
-    if (period == ReportPeriod.allTime) return trips;
-    return tripsInCurrentMonth(trips);
+  List<Trip> _filterTripsByPeriod(
+    List<Trip> trips,
+    ReportPeriod period,
+    DateTimeRange? range,
+  ) {
+    switch (period) {
+      case ReportPeriod.allTime:
+        return trips;
+      case ReportPeriod.monthly:
+        return tripsInCurrentMonth(trips);
+      case ReportPeriod.custom:
+        if (range == null) return const [];
+        final startMs =
+            DateTime(range.start.year, range.start.month, range.start.day)
+                .millisecondsSinceEpoch;
+        final endMs = DateTime(range.end.year, range.end.month,
+                range.end.day, 23, 59, 59, 999)
+            .millisecondsSinceEpoch;
+        return trips
+            .where((t) => t.startTime >= startMs && t.startTime <= endMs)
+            .toList();
+    }
   }
 
-  String _periodLabel(bool isMonthly, List<Trip> allTrips) {
-    if (isMonthly) {
-      return DateFormat('MMM yyyy').format(DateTime.now()).toUpperCase();
+  String _periodLabel(
+    ReportPeriod period,
+    List<Trip> allTrips,
+    DateTimeRange? range,
+  ) {
+    switch (period) {
+      case ReportPeriod.monthly:
+        return DateFormat('MMM yyyy').format(DateTime.now()).toUpperCase();
+      case ReportPeriod.custom:
+        if (range == null) return 'CUSTOM PERIOD';
+        final fmt = DateFormat('MMM d, y');
+        return '${fmt.format(range.start)} – ${fmt.format(range.end)}'
+            .toUpperCase();
+      case ReportPeriod.allTime:
+        if (allTrips.isEmpty) return 'ALL TIME';
+        var earliest = allTrips.first.startTime;
+        for (final trip in allTrips) {
+          if (trip.startTime < earliest) earliest = trip.startTime;
+        }
+        final date = DateTime.fromMillisecondsSinceEpoch(earliest);
+        return 'SINCE ${DateFormat('MMM yyyy').format(date).toUpperCase()}';
     }
-    if (allTrips.isEmpty) return 'ALL TIME';
-    var earliest = allTrips.first.startTime;
-    for (final trip in allTrips) {
-      if (trip.startTime < earliest) earliest = trip.startTime;
+  }
+
+  void _handleSelectPeriod(ReportPeriod period) {
+    ref.read(selectedReportPeriodProvider.notifier).state = period;
+    if (period == ReportPeriod.custom &&
+        ref.read(selectedDateRangeProvider) == null) {
+      _handlePickDateRange();
     }
-    final date = DateTime.fromMillisecondsSinceEpoch(earliest);
-    return 'SINCE ${DateFormat('MMM yyyy').format(date).toUpperCase()}';
+  }
+
+  Future<void> _handlePickDateRange() async {
+    final now = DateTime.now();
+    final current = ref.read(selectedDateRangeProvider);
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 10),
+      lastDate: now,
+      initialDateRange: current ??
+          DateTimeRange(start: DateTime(now.year, now.month, 1), end: now),
+    );
+    if (picked != null) {
+      ref.read(selectedDateRangeProvider.notifier).state = picked;
+    }
+  }
+
+  void _handlePickMonth(DateTime month) {
+    final start = DateTime(month.year, month.month, 1);
+    final end = DateTime(month.year, month.month + 1, 0);
+    ref.read(selectedDateRangeProvider.notifier).state =
+        DateTimeRange(start: start, end: end);
   }
 
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
     final selectedPeriod = ref.watch(selectedReportPeriodProvider);
+    final selectedRange = ref.watch(selectedDateRangeProvider);
     final isMonthly = selectedPeriod == ReportPeriod.monthly;
+    final isCustom = selectedPeriod == ReportPeriod.custom;
     final completedTrips = ref.watch(completedTripsProvider);
+    final currency = ref.watch(currencyCodeProvider);
 
     return Scaffold(
       body: SafeArea(
+        bottom: false,
         child: completedTrips.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) => Center(child: Text('Error: $error')),
           data: (allTrips) {
             final filteredTrips =
-                _filterTripsByPeriod(allTrips, selectedPeriod);
+                _filterTripsByPeriod(allTrips, selectedPeriod, selectedRange);
             final stats = filteredTrips.isEmpty
                 ? TripStats.empty
                 : TripStats.fromTrips(filteredTrips);
-            final periodLabel = _periodLabel(isMonthly, allTrips);
+            final periodLabel =
+                _periodLabel(selectedPeriod, allTrips, selectedRange);
+            final awaitingRange = isCustom && selectedRange == null;
 
             return ListView(
-              padding: const EdgeInsets.only(bottom: AppTheme.space24),
+              padding: EdgeInsets.only(
+                bottom: AppTheme.space24 +
+                    MediaQuery.of(context).padding.bottom,
+              ),
               children: [
                 _Header(periodLabel: periodLabel),
                 Padding(
@@ -178,14 +351,31 @@ class _ReportsTabState extends ConsumerState<ReportsTab> {
                     AppTheme.space14,
                   ),
                   child: _RangeToggle(
-                    isMonthly: isMonthly,
-                    onChanged: (monthly) => ref
-                            .read(selectedReportPeriodProvider.notifier)
-                            .state =
-                        monthly ? ReportPeriod.monthly : ReportPeriod.allTime,
+                    period: selectedPeriod,
+                    onChanged: _handleSelectPeriod,
                   ),
                 ),
-                if (filteredTrips.isEmpty)
+                if (isCustom)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppTheme.space16,
+                      0,
+                      AppTheme.space16,
+                      AppTheme.space14,
+                    ),
+                    child: _CustomRangeControls(
+                      range: selectedRange,
+                      onPickRange: _handlePickDateRange,
+                      onPickMonth: _handlePickMonth,
+                    ),
+                  ),
+                if (awaitingRange)
+                  const Padding(
+                    padding:
+                        EdgeInsets.symmetric(horizontal: AppTheme.space16),
+                    child: _PickRangePromptCard(),
+                  )
+                else if (filteredTrips.isEmpty)
                   Padding(
                     padding: const EdgeInsets.symmetric(
                         horizontal: AppTheme.space16),
@@ -195,7 +385,7 @@ class _ReportsTabState extends ConsumerState<ReportsTab> {
                   Padding(
                     padding: const EdgeInsets.symmetric(
                         horizontal: AppTheme.space16),
-                    child: _TotalDrivenCard(stats: stats),
+                    child: _TotalDrivenCard(stats: stats, currency: currency),
                   ),
                   if (isMonthly) ...[
                     const _SectionLabel(title: 'DAILY ACTIVITY'),
@@ -231,8 +421,8 @@ class _ReportsTabState extends ConsumerState<ReportsTab> {
                           label: 'PDF',
                           sub: 'Tax-ready',
                           enabled: filteredTrips.isNotEmpty,
-                          onTap: () =>
-                              _handleExportPDF(filteredTrips, periodLabel),
+                          onTap: () => _handleExportPDF(
+                              filteredTrips, periodLabel, currency),
                         ),
                       ),
                       const SizedBox(width: AppTheme.space10),
@@ -284,10 +474,10 @@ class _Header extends StatelessWidget {
 }
 
 class _RangeToggle extends StatelessWidget {
-  const _RangeToggle({required this.isMonthly, required this.onChanged});
+  const _RangeToggle({required this.period, required this.onChanged});
 
-  final bool isMonthly;
-  final ValueChanged<bool> onChanged;
+  final ReportPeriod period;
+  final ValueChanged<ReportPeriod> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -304,18 +494,175 @@ class _RangeToggle extends StatelessWidget {
           Expanded(
             child: _RangeToggleButton(
               label: 'This month',
-              selected: isMonthly,
-              onTap: () => onChanged(true),
+              selected: period == ReportPeriod.monthly,
+              onTap: () => onChanged(ReportPeriod.monthly),
             ),
           ),
           Expanded(
             child: _RangeToggleButton(
               label: 'All time',
-              selected: !isMonthly,
-              onTap: () => onChanged(false),
+              selected: period == ReportPeriod.allTime,
+              onTap: () => onChanged(ReportPeriod.allTime),
+            ),
+          ),
+          Expanded(
+            child: _RangeToggleButton(
+              label: 'Custom',
+              selected: period == ReportPeriod.custom,
+              onTap: () => onChanged(ReportPeriod.custom),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Shown only when [ReportPeriod.custom] is selected — a row that opens the
+/// native date-range picker, plus a horizontal "previous months" quick
+/// selector (May 2026, April 2026, ...) for the common case of "just last
+/// month's report" without fighting the calendar picker.
+class _CustomRangeControls extends StatelessWidget {
+  const _CustomRangeControls({
+    required this.range,
+    required this.onPickRange,
+    required this.onPickMonth,
+  });
+
+  final DateTimeRange? range;
+  final VoidCallback onPickRange;
+  final ValueChanged<DateTime> onPickMonth;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    final months = _recentMonths(12);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: onPickRange,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTheme.space14,
+              vertical: AppTheme.space14,
+            ),
+            decoration: BoxDecoration(
+              color: colors.surfaceElevated,
+              border: Border.all(color: colors.border),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.date_range_outlined, color: colors.accent, size: 20),
+                const SizedBox(width: AppTheme.space10),
+                Expanded(
+                  child: Text(
+                    range == null
+                        ? 'Choose a date range'
+                        : '${DateFormat('MMM d, y').format(range!.start)} – '
+                            '${DateFormat('MMM d, y').format(range!.end)}',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+                Icon(Icons.chevron_right, color: colors.textDimmer),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: AppTheme.space16),
+        Text('PREVIOUS MONTHS', style: Theme.of(context).textTheme.labelSmall),
+        const SizedBox(height: AppTheme.space8),
+        SizedBox(
+          height: 36,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: months.length,
+            separatorBuilder: (context, index) =>
+                const SizedBox(width: AppTheme.space8),
+            itemBuilder: (context, index) {
+              final month = months[index];
+              final selected = range != null &&
+                  range!.start.year == month.year &&
+                  range!.start.month == month.month;
+              return _MonthChip(
+                label: DateFormat('MMM yyyy').format(month),
+                selected: selected,
+                onTap: () => onPickMonth(month),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MonthChip extends StatelessWidget {
+  const _MonthChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: AppTheme.space14),
+        decoration: BoxDecoration(
+          color: selected ? colors.accentTint : colors.surfaceElevated,
+          border: Border.all(color: selected ? colors.accent : colors.border),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: selected ? colors.accent : colors.textDim,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+              ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PickRangePromptCard extends StatelessWidget {
+  const _PickRangePromptCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(AppTheme.space24),
+        child: Column(
+          children: [
+            Icon(Icons.date_range_outlined, size: 40, color: colors.textGhost),
+            const SizedBox(height: AppTheme.space14),
+            Text('Pick a date range',
+                style: Theme.of(context).textTheme.bodyLarge),
+            const SizedBox(height: AppTheme.space4),
+            Text(
+              'Choose dates above or tap a previous month',
+              textAlign: TextAlign.center,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: colors.textDim),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -358,9 +705,10 @@ class _RangeToggleButton extends StatelessWidget {
 }
 
 class _TotalDrivenCard extends StatelessWidget {
-  const _TotalDrivenCard({required this.stats});
+  const _TotalDrivenCard({required this.stats, required this.currency});
 
   final TripStats stats;
+  final String currency;
 
   @override
   Widget build(BuildContext context) {
@@ -450,17 +798,16 @@ class _TotalDrivenCard extends StatelessWidget {
                               ?.copyWith(color: colors.accent),
                         ),
                         Text(
-                          '${AppConstants.defaultCurrencySymbol}${stats.businessCost.toStringAsFixed(2)}',
+                          '${stats.businessCost.toStringAsFixed(2)} $currency',
                           style:
-                              Theme.of(context).textTheme.titleLarge?.copyWith(
+                              Theme.of(context).textTheme.headlineSmall?.copyWith(
                                     color: colors.accent,
-                                    fontSize: 22,
                                   ),
                         ),
                       ],
                     ),
                     Text(
-                      '@ ${avgRate.toStringAsFixed(2)}\n${AppConstants.defaultCurrencySymbol}/KM',
+                      '@ ${avgRate.toStringAsFixed(2)}\n$currency/KM',
                       textAlign: TextAlign.right,
                       style: Theme.of(context)
                           .textTheme

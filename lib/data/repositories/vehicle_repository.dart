@@ -89,4 +89,9 @@ class VehicleRepository {
   }
 
   Future<void> deleteVehicle(int id) => _vehiclesDao.deleteVehicle(id);
+
+  /// Manually corrects a vehicle's current odometer reading (Settings →
+  /// Odometer). See [OdometerManager.setOdometerReading].
+  Future<void> setOdometerReading(int vehicleId, double reading) =>
+      _odometerManager.setOdometerReading(vehicleId, reading);
 }

@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 enum BluetoothAclAction { connected, disconnected }
 
@@ -38,6 +41,37 @@ class BluetoothService {
     final result =
         await _methodChannel.invokeMethod<bool>('hasBluetoothPermission');
     return result ?? false;
+  }
+
+  /// Checks whether `MainActivity` was just launched from the "Bluetooth
+  /// connected — tap to start tracking" notification shown when no trip was
+  /// active to attach a stop/resume waypoint to (see
+  /// `BluetoothAutoTrackPrefs.showColdStartNotification` on the native
+  /// side) — the policy-compliant alternative to a fully silent launch,
+  /// since Android restricts starting activities from a killed app's
+  /// BroadcastReceiver. Call once at app startup; returns null on every
+  /// other launch.
+  static Future<int?> consumePendingAutoStartVehicleId() {
+    return _methodChannel
+        .invokeMethod<int>('consumePendingAutoStartVehicleId');
+  }
+
+  /// Key the native `BluetoothAclReceiver.kt` reads — relies on the
+  /// documented, stable `shared_preferences` plugin convention (Android
+  /// SharedPreferences file `FlutterSharedPreferences`, each key prefixed
+  /// `flutter.`) rather than a custom MethodChannel, since that file is
+  /// readable by plain Android code with no Flutter engine running at all
+  /// — exactly the killed-app case this cache exists for.
+  static const vehicleCacheKey = 'bt_vehicle_mac_cache';
+
+  /// Pushes the current mac->vehicleId map (already filtered to
+  /// `bluetoothAutoStart`-enabled vehicles) into SharedPreferences, so
+  /// `BluetoothAclReceiver` can match a connect/disconnect to a vehicle
+  /// even when this process — and the Drift database connection with it —
+  /// is dead. See `vehicleBluetoothCacheSyncProvider`.
+  static Future<void> syncVehicleCache(Map<String, int> macToVehicleId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(vehicleCacheKey, jsonEncode(macToVehicleId));
   }
 
   static Future<List<BondedDevice>> getBondedDevices() async {

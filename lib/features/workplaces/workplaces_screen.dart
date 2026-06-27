@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/router/app_router.dart';
+import '../../core/theme/app_theme.dart';
 import '../../data/database/app_database.dart';
 import 'providers/workplaces_list_provider.dart';
 
@@ -44,6 +45,7 @@ class WorkplacesScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = AppColors.of(context);
     final workplaces = ref.watch(workplacesListProvider);
 
     return Scaffold(
@@ -53,6 +55,7 @@ class WorkplacesScreen extends ConsumerWidget {
         child: const Icon(Icons.add),
       ),
       body: SafeArea(
+        bottom: false,
         child: workplaces.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) => Center(child: Text('Error: $error')),
@@ -64,22 +67,21 @@ class WorkplacesScreen extends ConsumerWidget {
                   children: [
                     Icon(
                       Icons.business_outlined,
-                      size: 64,
-                      color: Colors.grey[600],
+                      size: 48,
+                      color: colors.textGhost,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: AppTheme.space14),
                     Text(
                       'No Workplaces Yet',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: Colors.grey,
-                          ),
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: AppTheme.space8),
                     Text(
                       'Tap + to add your first workplace',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.grey,
-                          ),
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(color: colors.textDim),
                     ),
                   ],
                 ),
@@ -87,12 +89,17 @@ class WorkplacesScreen extends ConsumerWidget {
             }
 
             return ListView.builder(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.fromLTRB(
+                AppTheme.space16,
+                AppTheme.space16,
+                AppTheme.space16,
+                AppTheme.space16 + MediaQuery.of(context).padding.bottom + 72,
+              ),
               itemCount: list.length,
               itemBuilder: (context, index) {
                 final workplace = list[index];
                 return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.only(bottom: AppTheme.space10),
                   child: _WorkplaceCard(
                     workplace: workplace,
                     onTap: () =>
@@ -122,24 +129,28 @@ class _WorkplaceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Card(
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(AppTheme.space16),
           child: Row(
             children: [
-              CircleAvatar(
-                radius: 24,
-                backgroundColor:
-                    Theme.of(context).colorScheme.primary.withAlpha(30),
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: colors.accentTint,
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: Icon(
-                  workplace.isHome ? Icons.home : Icons.business,
-                  color: Theme.of(context).colorScheme.primary,
+                  workplace.isHome ? Icons.home_outlined : Icons.business_outlined,
+                  color: colors.accent,
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: AppTheme.space14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -149,67 +160,56 @@ class _WorkplaceCard extends StatelessWidget {
                         Expanded(
                           child: Text(
                             workplace.name,
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
+                            style: Theme.of(context).textTheme.titleMedium,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         if (workplace.isHome) ...[
-                          const SizedBox(width: 8),
+                          const SizedBox(width: AppTheme.space8),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
+                              horizontal: AppTheme.space8,
+                              vertical: 3,
                             ),
                             decoration: BoxDecoration(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .primary
-                                  .withAlpha(30),
+                              color: colors.accentTint,
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
                               'HOME',
                               style: Theme.of(context)
                                   .textTheme
-                                  .labelSmall
-                                  ?.copyWith(
-                                    color:
-                                        Theme.of(context).colorScheme.primary,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                                  .labelMedium
+                                  ?.copyWith(color: colors.accent),
                             ),
                           ),
                         ],
                       ],
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: AppTheme.space4),
                     Text(
                       workplace.address,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.grey,
-                          ),
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: colors.textDim),
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: AppTheme.space8),
                     Row(
                       children: [
                         Icon(
-                          Icons.my_location,
-                          size: 14,
-                          color: Colors.grey[600],
+                          Icons.my_location_outlined,
+                          size: 13,
+                          color: colors.textDimmer,
                         ),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: AppTheme.space4),
                         Text(
                           '${workplace.radiusMeters.toStringAsFixed(0)} m geofence',
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Colors.grey,
-                                  ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: colors.textDimmer),
                         ),
                       ],
                     ),

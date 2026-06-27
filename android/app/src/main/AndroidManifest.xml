@@ -21,13 +21,39 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
 
+    <!-- Lets BluetoothAclReceiver's BOOT_COMPLETED registration actually be
+         delivered after a reboot, before the app has been launched once —
+         see BluetoothAclReceiver.kt's class doc. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <!-- Prevents CPU from sleeping while GPS is actively collecting points. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- Allows the app to ask Android to exempt it from battery optimization
+         so GPS tracking continues when the screen is off or the app is
+         in the background. Without this, the OS can suspend GPS. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+
     <application
         android:label="milelog_flutter"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <service
             android:name="id.flutter.flutter_background_service.BackgroundService"
-            android:foregroundServiceType="location"/>
+            android:foregroundServiceType="location"
+            android:stopWithTask="false"/>
+
+        <!-- Static (manifest-declared) receiver — unlike the dynamic one
+             registered in MainActivity, this fires even when the app is
+             fully killed. See BluetoothAclReceiver.kt. -->
+        <receiver
+            android:name=".BluetoothAclReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED"/>
+                <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED"/>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+            </intent-filter>
+        </receiver>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

@@ -17,6 +17,10 @@ class TripsDao extends DatabaseAccessor<AppDatabase> with _$TripsDaoMixin {
       (select(trips)..where((t) => t.isActive.equals(true)))
           .watchSingleOrNull();
 
+  /// Returns all active trips (for crash recovery detection).
+  Future<List<Trip>> getActiveTrips() =>
+      (select(trips)..where((t) => t.isActive.equals(true))).get();
+
   // ── Trip queries ─────────────────────────────────────────────────────────
 
   Future<Trip?> getTripById(int id) =>

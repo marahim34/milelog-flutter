@@ -1,8 +1,13 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../providers/repository_providers.dart';
 
 /// Keeps the app process alive as an Android foreground service while a
 /// trip is being tracked, so GPS collection in `LocationTrackingService`
@@ -98,6 +103,84 @@ void _onStart(ServiceInstance service) {
           '${distanceKm.toStringAsFixed(1)} km • ${_formatDuration(elapsedSeconds)}',
     );
   });
+
+  // This service can be started two ways: normally (a live trip's
+  // foreground notification — _initialize in tracking_notifier.dart) or
+  // woken by BluetoothAclReceiver.kt for a killed-app Bluetooth event,
+  // which writes a one-shot instruction into SharedPreferences before
+  // starting it. Check for that instruction every time this isolate boots.
+  unawaited(_handlePendingBluetoothAction());
+}
+
+/// Reads and clears the pending Bluetooth action `BluetoothAutoTrackPrefs`
+/// (native) leaves for this headless isolate — see its class doc for the
+/// full action set. Only `disconnected_commit` (the 3-minute merge window
+/// elapsed with no reconnect) and `connected_after_stop` (reconnect after
+/// that commit) need a DB write here; `disconnected`/`connected_merge`
+/// have nothing to do without a live `LocationTrackingService` to
+/// pause/resume, and `connected_cold` is handled natively via a tap-to-
+/// launch notification instead of reaching here at all.
+///
+/// Builds its own standalone [ProviderContainer] — this isolate has no
+/// `ProviderScope` widget tree, but the repository/DAO providers don't need
+/// one; they only need a container to be read from, same as in any test.
+Future<void> _handlePendingBluetoothAction() async {
+  final prefs = await SharedPreferences.getInstance();
+  final action = prefs.getString('bt_pending_action');
+  if (action == null) return;
+  await prefs.remove('bt_pending_action');
+  final vehicleIdRaw = prefs.getString('bt_pending_vehicle_id');
+  await prefs.remove('bt_pending_vehicle_id');
+  await prefs.remove('bt_pending_mac');
+
+  if (action != 'disconnected_commit' && action != 'connected_after_stop') {
+    return;
+  }
+  final vehicleId = int.tryParse(vehicleIdRaw ?? '');
+  if (vehicleId == null) return;
+
+  final container = ProviderContainer();
+  try {
+    final vehicleRepository = container.read(vehicleRepositoryProvider);
+    final vehicle = await vehicleRepository.getById(vehicleId);
+    if (vehicle == null) return;
+
+    final tripRepository = container.read(tripRepositoryProvider);
+    final trip =
+        await tripRepository.getActiveTripForVehicle(vehicle.plateNumber);
+    if (trip == null) return;
+
+    Position position;
+    try {
+      position = await Geolocator.getCurrentPosition(
+        locationSettings:
+            const LocationSettings(accuracy: LocationAccuracy.medium),
+      ).timeout(const Duration(seconds: 15));
+    } catch (_) {
+      return; // Best-effort — no fix, no waypoint.
+    }
+
+    final distanceKm =
+        await tripRepository.calculateDistanceFromPersistedPoints(trip.id);
+
+    if (action == 'disconnected_commit') {
+      await tripRepository.recordPauseWaypoint(
+        tripId: trip.id,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        distanceKmAtStop: distanceKm,
+      );
+    } else {
+      await tripRepository.recordResumeWaypoint(
+        tripId: trip.id,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        distanceKmAtStop: distanceKm,
+      );
+    }
+  } finally {
+    container.dispose();
+  }
 }
 
 @pragma('vm:entry-point')

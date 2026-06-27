@@ -5,15 +5,20 @@ import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_providers.dart';
 import 'features/tracking/providers/bluetooth_auto_tracking_provider.dart';
+import 'features/tracking/providers/trip_recovery_provider.dart';
+import 'features/tracking/providers/vehicle_bluetooth_cache_sync_provider.dart';
 
 class MileLogApp extends ConsumerWidget {
   const MileLogApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Watched once here purely to instantiate it for the app's lifetime —
-    // it has no UI, it just needs to start listening for ACL events.
+    // Watched once here purely to instantiate them for the app's lifetime —
+    // neither has UI, they just need to keep listening/syncing.
     ref.watch(bluetoothAutoTrackingProvider);
+    ref.watch(vehicleBluetoothCacheSyncProvider);
+    ref.watch(coldStartAutoTrackProvider);
+    ref.watch(tripRecoveryProvider);
     final palette = ref.watch(paletteProvider);
     final themeMode = ref.watch(themeModeProvider);
 

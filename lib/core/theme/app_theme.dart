@@ -276,6 +276,14 @@ class AppTheme {
   static const space20 = 20.0;
   static const space24 = 24.0;
 
+  // ── Typography scale (dp) ─────────────────────────────────────────────
+  static const fontSizeHeading = 24.0;
+  static const fontSizeTitleLarge = 20.0;
+  static const fontSizeTitleMedium = 16.0;
+  static const fontSizeBody = 14.0;
+  static const fontSizeCaption = 12.0;
+  static const fontSizeLabel = 11.0;
+
   // ── Shape ────────────────────────────────────────────────────────────────
   static const cardRadius = 18.0;
   static const buttonRadius = 14.0;
@@ -335,23 +343,24 @@ class AppTheme {
     final colors = colorsFor(palette, brightness);
 
     final textTheme = TextTheme(
-      // Hero numbers — km/€/time counters.
+      // Hero numbers — km/currency/time counters.
       displayLarge: _display(size: 58, color: colors.textPrimary),
       displayMedium: _display(size: 46, color: colors.textPrimary),
-      // Screen titles.
-      headlineLarge: _heading(size: 32, color: colors.textPrimary),
-      headlineMedium: _heading(size: 28, color: colors.textPrimary),
-      headlineSmall: _heading(size: 22, color: colors.textPrimary),
+      displaySmall: _display(size: 36, color: colors.textPrimary),
+      // Screen headings (headingLarge→24, headingMedium→20, headingSmall→16).
+      headlineLarge: _heading(size: 24, color: colors.textPrimary),
+      headlineMedium: _heading(size: 24, color: colors.textPrimary),
+      headlineSmall: _heading(size: 20, color: colors.textPrimary),
       titleLarge: _heading(size: 20, color: colors.textPrimary),
       titleMedium:
           _body(size: 16, color: colors.textPrimary, weight: FontWeight.w600),
-      // Body text.
+      // Body text (headingSmall→16 semibold via titleMedium).
       bodyLarge: _body(size: 16, color: colors.textPrimary),
       bodyMedium: _body(size: 14, color: colors.textPrimary),
-      bodySmall: _body(size: 13, color: colors.textDim),
-      // Mono section/micro labels.
+      bodySmall: _body(size: 12, color: colors.textDim, weight: FontWeight.w400),
+      // Mono section/micro labels — 11px, letter-spacing ~0.5.
       labelLarge: _mono(size: 11, color: colors.textPrimary, trackingEm: 0.04),
-      labelMedium: _mono(size: 11, color: colors.textDim, trackingEm: 0.06),
+      labelMedium: _mono(size: 11, color: colors.textDim, trackingEm: 0.045),
       labelSmall: _mono(size: 10, color: colors.textDimmer, trackingEm: 0.14),
     );
 
@@ -367,9 +376,18 @@ class AppTheme {
         surface: colors.surfaceElevated,
         primary: colors.accent,
         onPrimary: colors.accentInk,
+        // Tinted accent for pill indicators (NavigationBar, chips, etc.)
+        primaryContainer:
+            colors.accent.withValues(alpha: colors.accentTintAlpha),
+        onPrimaryContainer: colors.accent,
         // "Personal" trip-type tag color — see AppColors.businessTag/personalTag.
         secondary: colors.personalTag,
         onSecondary: colors.accentInk,
+        // Map secondaryContainer → accent tint so M3 NavigationBar indicator
+        // uses the correct palette accent even when theme override is missed.
+        secondaryContainer:
+            colors.accent.withValues(alpha: colors.accentTintAlpha),
+        onSecondaryContainer: colors.accent,
         tertiary: colors.accentSecondary,
         onTertiary: colors.accentInk,
         error: colors.danger,
@@ -465,6 +483,28 @@ class AppTheme {
               : colors.textGhost,
         ),
       ),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: colors.surfaceElevated,
+        surfaceTintColor: Colors.transparent,
+        indicatorColor: colors.accent.withValues(alpha: colors.accentTintAlpha),
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return IconThemeData(color: colors.accent);
+          }
+          return IconThemeData(color: colors.textDimmer);
+        }),
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return TextStyle(
+              color: colors.accent,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            );
+          }
+          return TextStyle(color: colors.textDimmer, fontSize: 12);
+        }),
+      ),
     );
   }
 }
+

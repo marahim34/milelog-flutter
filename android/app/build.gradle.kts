@@ -46,4 +46,7 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // Durable (survives process death) scheduling for the Bluetooth
+    // killed-app auto-track path — see BluetoothAutoTrackPrefs.kt.
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 }

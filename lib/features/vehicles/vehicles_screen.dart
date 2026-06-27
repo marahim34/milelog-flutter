@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/router/app_router.dart';
+import '../../core/theme/app_theme.dart';
 import '../../data/database/app_database.dart';
 import 'providers/vehicles_list_provider.dart';
 
@@ -52,10 +53,12 @@ class VehiclesScreen extends ConsumerWidget {
         child: const Icon(Icons.add),
       ),
       body: SafeArea(
+        bottom: false,
         child: vehicles.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) => Center(child: Text('Error: $error')),
           data: (list) {
+            final colors = AppColors.of(context);
             if (list.isEmpty) {
               return Center(
                 child: Column(
@@ -63,22 +66,21 @@ class VehiclesScreen extends ConsumerWidget {
                   children: [
                     Icon(
                       Icons.directions_car_outlined,
-                      size: 64,
-                      color: Colors.grey[600],
+                      size: 48,
+                      color: colors.textGhost,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: AppTheme.space14),
                     Text(
                       'No Vehicles Yet',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: Colors.grey,
-                          ),
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: AppTheme.space8),
                     Text(
                       'Tap + to add your first vehicle',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.grey,
-                          ),
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(color: colors.textDim),
                     ),
                   ],
                 ),
@@ -86,12 +88,17 @@ class VehiclesScreen extends ConsumerWidget {
             }
 
             return ListView.builder(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.fromLTRB(
+                AppTheme.space16,
+                AppTheme.space16,
+                AppTheme.space16,
+                AppTheme.space16 + MediaQuery.of(context).padding.bottom + 72,
+              ),
               itemCount: list.length,
               itemBuilder: (context, index) {
                 final vehicle = list[index];
                 return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.only(bottom: AppTheme.space10),
                   child: _VehicleCard(
                     vehicle: vehicle,
                     onTap: () =>
@@ -121,24 +128,25 @@ class _VehicleCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Card(
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(AppTheme.space16),
           child: Row(
             children: [
-              CircleAvatar(
-                radius: 24,
-                backgroundColor:
-                    Theme.of(context).colorScheme.primary.withAlpha(30),
-                child: Icon(
-                  Icons.directions_car,
-                  color: Theme.of(context).colorScheme.primary,
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: colors.accentTint,
+                  borderRadius: BorderRadius.circular(12),
                 ),
+                child: Icon(Icons.directions_car, color: colors.accent),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: AppTheme.space14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -148,67 +156,62 @@ class _VehicleCard extends StatelessWidget {
                         Expanded(
                           child: Text(
                             vehicle.name,
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
+                            style: Theme.of(context).textTheme.titleMedium,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         if (vehicle.isDefault) ...[
-                          const SizedBox(width: 8),
+                          const SizedBox(width: AppTheme.space8),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
+                              horizontal: AppTheme.space8,
+                              vertical: 3,
                             ),
                             decoration: BoxDecoration(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .primary
-                                  .withAlpha(30),
+                              color: colors.accentTint,
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
                               'DEFAULT',
                               style: Theme.of(context)
                                   .textTheme
-                                  .labelSmall
-                                  ?.copyWith(
-                                    color:
-                                        Theme.of(context).colorScheme.primary,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                                  .labelMedium
+                                  ?.copyWith(color: colors.accent),
                             ),
                           ),
                         ],
                       ],
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: AppTheme.space4),
                     Text(
                       vehicle.plateNumber,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.grey,
-                          ),
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: colors.textDim),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: AppTheme.space8),
                     Row(
                       children: [
-                        Icon(Icons.speed, size: 14, color: Colors.grey[600]),
-                        const SizedBox(width: 6),
+                        Icon(Icons.speed_outlined, size: 13, color: colors.textDimmer),
+                        const SizedBox(width: AppTheme.space4),
                         Text(
                           '${NumberFormat('#,##0').format(vehicle.lastOdometer)} km',
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Colors.grey,
-                                  ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: colors.textDimmer),
                         ),
                       ],
                     ),
                   ],
                 ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.speed_outlined),
+                tooltip: 'Odometer log',
+                onPressed: () => context
+                    .push(AppRoutes.vehicleOdometerLogPath(vehicle.id)),
               ),
               IconButton(
                 icon: Icon(

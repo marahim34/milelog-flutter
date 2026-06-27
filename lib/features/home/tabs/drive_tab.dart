@@ -1,15 +1,18 @@
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/database/app_database.dart';
 import '../../../data/models/trip_type.dart';
 import '../../../data/providers/database_provider.dart';
+import '../../tracking/start_trip_sheet.dart';
 import '../home_screen.dart';
 import '../providers/completed_trips_provider.dart';
 import '../utils/trip_stats.dart';
@@ -29,7 +32,46 @@ class DriveTab extends ConsumerStatefulWidget {
 }
 
 class _DriveTabState extends ConsumerState<DriveTab> {
-  void _handleStartTrip() => context.push(AppRoutes.tracking);
+  // null = still checking, true = ok, false = needs fixing
+  bool? _batteryOptimizationOk;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkBatteryOptimization();
+  }
+
+  Future<void> _checkBatteryOptimization() async {
+    if (!Platform.isAndroid) {
+      setState(() => _batteryOptimizationOk = true);
+      return;
+    }
+    final status = await Permission.ignoreBatteryOptimizations.status;
+    if (mounted) {
+      setState(() => _batteryOptimizationOk = status.isGranted);
+    }
+  }
+
+  Future<void> _requestBatteryOptimization() async {
+    await Permission.ignoreBatteryOptimizations.request();
+    await _checkBatteryOptimization();
+  }
+
+  Future<void> _handleStartTrip() async {
+    final args = await showModalBottomSheet<TrackingScreenArgs>(
+      context: context,
+      backgroundColor: AppColors.of(context).surfaceElevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(AppTheme.cardRadius)),
+      ),
+      isScrollControlled: true,
+      builder: (context) => const StartTripSheet(),
+    );
+    if (args != null && mounted) {
+      context.push(AppRoutes.tracking, extra: args);
+    }
+  }
 
   void _handleSeeAllTrips() =>
       ref.read(selectedTabIndexProvider.notifier).state = 1;
@@ -41,6 +83,7 @@ class _DriveTabState extends ConsumerState<DriveTab> {
 
     return Scaffold(
       body: SafeArea(
+        bottom: false,
         child: completedTrips.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) => Center(child: Text('Error: $error')),
@@ -51,8 +94,13 @@ class _DriveTabState extends ConsumerState<DriveTab> {
             final recentTrips = trips.take(4).toList();
 
             return ListView(
-              padding: const EdgeInsets.only(bottom: AppTheme.space24),
+              padding: EdgeInsets.only(
+                bottom: AppTheme.space24 +
+                    MediaQuery.of(context).padding.bottom,
+              ),
               children: [
+                if (_batteryOptimizationOk == false)
+                  _BatteryWarningBanner(onAllow: _requestBatteryOptimization),
                 _Header(),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(
@@ -759,4 +807,74 @@ class _DashedLinePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _DashedLinePainter oldDelegate) =>
       oldDelegate.color != color;
+}
+
+/// Shown on Android when the app has not been excluded from battery
+/// optimisation. Tapping "Fix now" opens the system permission dialog.
+class _BatteryWarningBanner extends StatelessWidget {
+  const _BatteryWarningBanner({required this.onAllow});
+
+  final VoidCallback onAllow;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(
+        AppTheme.space16,
+        AppTheme.space14,
+        AppTheme.space16,
+        0,
+      ),
+      decoration: BoxDecoration(
+        color: colors.warning.withValues(alpha: 0.12),
+        border: Border.all(color: colors.warning.withValues(alpha: 0.4)),
+        borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppTheme.space14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.battery_alert, color: colors.warning, size: 20),
+            const SizedBox(width: AppTheme.space10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Background activity restricted',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: colors.warning,
+                        ),
+                  ),
+                  const SizedBox(height: AppTheme.space4),
+                  Text(
+                    'GPS tracking may stop when the screen locks. '
+                    'Allow background activity so trips are never interrupted.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colors.textDim,
+                          height: 1.4,
+                        ),
+                  ),
+                  const SizedBox(height: AppTheme.space10),
+                  TextButton(
+                    onPressed: onAllow,
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      foregroundColor: colors.warning,
+                    ),
+                    child: const Text('Fix now →'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

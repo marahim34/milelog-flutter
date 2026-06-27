@@ -24,11 +24,13 @@ dependencies:
 
   # ── Maps ──────────────────────────────────────────────────────────────────
   flutter_map: ^7.0.2
+  flutter_map_marker_cluster: ^1.4.0   # proximity-clusters stop markers on long routes
   latlong2: ^0.9.1               # coordinate type used by flutter_map
 
   # ── Location & permissions ────────────────────────────────────────────────
   geolocator: ^13.0.0
   permission_handler: ^11.3.1
+  geocoding: ^3.0.0      # reverse geocoding for Bluetooth-stop waypoint addresses
 
   # ── Background GPS service ────────────────────────────────────────────────
   flutter_background_service: ^5.0.5

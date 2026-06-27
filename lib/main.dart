@@ -7,6 +7,7 @@ import 'app.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/theme_providers.dart';
 import 'data/services/background_tracking_service.dart';
+import 'data/services/permission_onboarding_service.dart';
 import 'data/services/session_service.dart';
 import 'data/services/theme_preference_service.dart';
 
@@ -14,7 +15,10 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Must be set before AppRouter.router is first accessed (in app.dart).
-  AppRouter.session = SessionListenable(await SessionService.isLoggedIn());
+  AppRouter.session = SessionListenable(
+    await SessionService.isLoggedIn(),
+    await PermissionOnboardingService.isCompleted(),
+  );
 
   final initialPalette = await ThemePreferenceService.getPalette();
   final initialThemeMode = await ThemePreferenceService.getThemeMode();

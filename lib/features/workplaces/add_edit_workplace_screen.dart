@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/theme/app_theme.dart';
 import '../../data/database/app_database.dart';
 import 'providers/add_edit_workplace_provider.dart';
 
@@ -12,10 +14,14 @@ class AddEditWorkplaceScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = AppColors.of(context);
     final workplaceState = ref.watch(addEditWorkplaceProvider(workplaceId));
 
     return Scaffold(
+      backgroundColor: colors.background,
       appBar: AppBar(
+        backgroundColor: colors.background,
+        elevation: 0,
         title: Text(workplaceId == null ? 'Add Workplace' : 'Edit Workplace'),
       ),
       body: workplaceState.when(
@@ -75,6 +81,8 @@ class _WorkplaceFormState extends State<_WorkplaceForm> {
   late final TextEditingController _radiusController;
   late bool _isHome;
   bool _isSaving = false;
+  bool _isLocating = false;
+  String? _locationError;
 
   @override
   void initState() {
@@ -102,6 +110,47 @@ class _WorkplaceFormState extends State<_WorkplaceForm> {
     _longitudeController.dispose();
     _radiusController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleUseCurrentLocation() async {
+    setState(() {
+      _isLocating = true;
+      _locationError = null;
+    });
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        setState(() => _locationError = 'Turn on location services and try again.');
+        return;
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        setState(() =>
+            _locationError = 'Location permission is needed to fill this in automatically.');
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      ).timeout(const Duration(seconds: 15));
+
+      if (!mounted) return;
+      setState(() {
+        _latitudeController.text = position.latitude.toStringAsFixed(6);
+        _longitudeController.text = position.longitude.toStringAsFixed(6);
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _locationError = "Couldn't get your current location. Try again.");
+      }
+    } finally {
+      if (mounted) setState(() => _isLocating = false);
+    }
   }
 
   Future<void> _handleSave() async {
@@ -132,14 +181,23 @@ class _WorkplaceFormState extends State<_WorkplaceForm> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return SafeArea(
+      bottom: false,
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.fromLTRB(
+          AppTheme.space20,
+          AppTheme.space20,
+          AppTheme.space20,
+          AppTheme.space20 + MediaQuery.of(context).padding.bottom,
+        ),
         child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              const _SectionLabel('DETAILS'),
+              const SizedBox(height: AppTheme.space8),
               TextFormField(
                 controller: _nameController,
                 textInputAction: TextInputAction.next,
@@ -149,7 +207,7 @@ class _WorkplaceFormState extends State<_WorkplaceForm> {
                 ),
                 validator: _requiredValidator,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: AppTheme.space16),
               TextFormField(
                 controller: _addressController,
                 textInputAction: TextInputAction.next,
@@ -159,7 +217,38 @@ class _WorkplaceFormState extends State<_WorkplaceForm> {
                 ),
                 validator: _requiredValidator,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: AppTheme.space20),
+              const _SectionLabel('COORDINATES'),
+              const SizedBox(height: AppTheme.space8),
+              OutlinedButton.icon(
+                onPressed: _isLocating ? null : _handleUseCurrentLocation,
+                icon: _isLocating
+                    ? SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: colors.accent,
+                        ),
+                      )
+                    : const Icon(Icons.my_location),
+                label: Text(_isLocating ? 'Locating…' : 'Use my current location'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: AppTheme.space14),
+                  side: BorderSide(color: colors.border),
+                ),
+              ),
+              if (_locationError != null) ...[
+                const SizedBox(height: AppTheme.space8),
+                Text(
+                  _locationError!,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: colors.danger),
+                ),
+              ],
+              const SizedBox(height: AppTheme.space16),
               Row(
                 children: [
                   Expanded(
@@ -172,7 +261,7 @@ class _WorkplaceFormState extends State<_WorkplaceForm> {
                       validator: _numberValidator,
                     ),
                   ),
-                  const SizedBox(width: 16),
+                  const SizedBox(width: AppTheme.space16),
                   Expanded(
                     child: TextFormField(
                       controller: _longitudeController,
@@ -185,7 +274,9 @@ class _WorkplaceFormState extends State<_WorkplaceForm> {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: AppTheme.space20),
+              const _SectionLabel('GEOFENCE'),
+              const SizedBox(height: AppTheme.space8),
               TextFormField(
                 controller: _radiusController,
                 textInputAction: TextInputAction.done,
@@ -193,22 +284,22 @@ class _WorkplaceFormState extends State<_WorkplaceForm> {
                     const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(
                   labelText: 'Geofence radius (m)',
-                  prefixIcon: Icon(Icons.my_location),
+                  prefixIcon: Icon(Icons.radar),
                 ),
                 validator: _numberValidator,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: AppTheme.space16),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Set as home'),
                 value: _isHome,
                 onChanged: (value) => setState(() => _isHome = value),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: AppTheme.space24),
               ElevatedButton(
                 onPressed: _isSaving ? null : _handleSave,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  padding: const EdgeInsets.symmetric(vertical: AppTheme.space4),
                   child: _isSaving
                       ? const SizedBox(
                           height: 20,
@@ -222,6 +313,24 @@ class _WorkplaceFormState extends State<_WorkplaceForm> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.title);
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return Text(
+      title,
+      style: Theme.of(context)
+          .textTheme
+          .labelSmall
+          ?.copyWith(color: colors.textDimmer, letterSpacing: 1.2),
     );
   }
 }

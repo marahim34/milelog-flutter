@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../repositories/odometer_repository.dart';
 import '../repositories/trip_repository.dart';
 import '../repositories/vehicle_repository.dart';
 import '../repositories/workplace_repository.dart';
@@ -11,6 +12,7 @@ final tripRepositoryProvider = Provider<TripRepository>(
     ref.watch(tripsDaoProvider),
     ref.watch(vehiclesDaoProvider),
     ref.watch(odometerManagerProvider),
+    ref.watch(waypointsDaoProvider),
   ),
 );
 
@@ -23,4 +25,8 @@ final vehicleRepositoryProvider = Provider<VehicleRepository>(
 
 final workplaceRepositoryProvider = Provider<WorkplaceRepository>(
   (ref) => WorkplaceRepository(ref.watch(workPlacesDaoProvider)),
+);
+
+final odometerReadingRepositoryProvider = Provider<OdometerReadingRepository>(
+  (ref) => OdometerReadingRepository(ref.watch(odometerDaoProvider)),
 );

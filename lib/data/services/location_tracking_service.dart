@@ -47,6 +47,11 @@ class LocationTrackingService {
   final List<TrackedPoint> _points = [];
   double _totalDistanceKm = 0;
 
+  // Inactivity detection: tracks last time vehicle moved > 50m.
+  int _lastMovementTimeMs = 0;
+  TrackedPoint? _lastMovementReferencePoint;
+  static const _movementThresholdM = 50.0;
+
   final _positionController = StreamController<Position>.broadcast();
   final _speedController = StreamController<double>.broadcast();
   final _distanceController = StreamController<double>.broadcast();
@@ -71,6 +76,20 @@ class LocationTrackingService {
 
   double get maxSpeedKmh =>
       _points.isEmpty ? 0 : _points.map((p) => p.speedKmh).reduce(math.max);
+
+  /// Seconds elapsed since the last detected movement of >[_movementThresholdM]m.
+  /// Returns 0 if tracking hasn't started yet.
+  int get secondsSinceLastMovement {
+    if (_lastMovementTimeMs == 0) return 0;
+    return ((DateTime.now().millisecondsSinceEpoch - _lastMovementTimeMs) / 1000)
+        .floor();
+  }
+
+  /// Resets the inactivity clock — call when the trip is manually resumed so
+  /// the 60-minute window starts fresh rather than from before the pause.
+  void resetInactivityTimer() {
+    _lastMovementTimeMs = DateTime.now().millisecondsSinceEpoch;
+  }
 
   /// Checks location services and permission, requesting permission if
   /// it hasn't been granted or denied yet. Call this before [start].
@@ -100,6 +119,8 @@ class LocationTrackingService {
   Future<void> start() async {
     _points.clear();
     _totalDistanceKm = 0;
+    _lastMovementTimeMs = DateTime.now().millisecondsSinceEpoch;
+    _lastMovementReferencePoint = null;
     _distanceController.add(0);
     await _listen();
   }
@@ -177,6 +198,20 @@ class LocationTrackingService {
         point.latitude,
         point.longitude,
       );
+    }
+
+    // Update inactivity reference when vehicle moves more than the threshold.
+    final ref = _lastMovementReferencePoint;
+    if (ref == null) {
+      _lastMovementReferencePoint = point;
+    } else {
+      final distM = _haversineKm(
+            ref.latitude, ref.longitude, point.latitude, point.longitude) *
+          1000;
+      if (distM > _movementThresholdM) {
+        _lastMovementTimeMs = point.timestampMs;
+        _lastMovementReferencePoint = point;
+      }
     }
 
     _points.add(point);

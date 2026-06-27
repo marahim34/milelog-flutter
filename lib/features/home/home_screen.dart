@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../tracking/providers/trip_recovery_provider.dart';
+import '../tracking/widgets/trip_recovery_dialog.dart';
 import 'tabs/drive_tab.dart';
 import 'tabs/logs_tab.dart';
 import 'tabs/reports_tab.dart';
@@ -16,6 +19,30 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final _pageController = PageController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Check for interrupted trips on app launch (after first frame)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkForTripRecovery();
+    });
+  }
+
+  void _checkForTripRecovery() {
+    final recoveryState = ref.read(tripRecoveryProvider);
+    if (recoveryState is TripRecoveryNeedsRecovery) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => TripRecoveryDialog(
+          tripId: recoveryState.tripId,
+          startTimeMs: recoveryState.startTimeMs,
+          distanceKm: recoveryState.distanceKm,
+        ),
+      );
+    }
+  }
 
   @override
   void dispose() {
@@ -53,25 +80,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           SettingsTab(),
         ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: selectedIndex,
-        onTap: _onTabTapped,
-        type: BottomNavigationBarType.fixed,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.directions_car),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: selectedIndex,
+        onDestinationSelected: _onTabTapped,
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.directions_car_outlined),
+            selectedIcon: Icon(Icons.directions_car),
             label: 'Drive',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.list),
+          NavigationDestination(
+            icon: Icon(Icons.list_outlined),
+            selectedIcon: Icon(Icons.list),
             label: 'Logs',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.bar_chart),
+          NavigationDestination(
+            icon: Icon(Icons.bar_chart_outlined),
+            selectedIcon: Icon(Icons.bar_chart),
             label: 'Reports',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings),
             label: 'Settings',
           ),
         ],

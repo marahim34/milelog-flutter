@@ -15,10 +15,14 @@ class AddEditVehicleScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = AppColors.of(context);
     final vehicleState = ref.watch(addEditVehicleProvider(vehicleId));
 
     return Scaffold(
+      backgroundColor: colors.background,
       appBar: AppBar(
+        backgroundColor: colors.background,
+        elevation: 0,
         title: Text(vehicleId == null ? 'Add Vehicle' : 'Edit Vehicle'),
       ),
       body: vehicleState.when(
@@ -216,15 +220,24 @@ class _VehicleFormState extends ConsumerState<_VehicleForm> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     final isPaired = _bluetoothMac != null;
     return SafeArea(
+      bottom: false,
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.fromLTRB(
+          AppTheme.space20,
+          AppTheme.space20,
+          AppTheme.space20,
+          AppTheme.space20 + MediaQuery.of(context).padding.bottom,
+        ),
         child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              const _SectionLabel('VEHICLE DETAILS'),
+              const SizedBox(height: AppTheme.space8),
               TextFormField(
                 controller: _nameController,
                 textInputAction: TextInputAction.next,
@@ -236,7 +249,7 @@ class _VehicleFormState extends ConsumerState<_VehicleForm> {
                     ? 'Enter a vehicle name'
                     : null,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: AppTheme.space16),
               TextFormField(
                 controller: _plateController,
                 textInputAction: TextInputAction.next,
@@ -248,7 +261,9 @@ class _VehicleFormState extends ConsumerState<_VehicleForm> {
                     ? 'Enter a plate number'
                     : null,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: AppTheme.space20),
+              const _SectionLabel('MILEAGE'),
+              const SizedBox(height: AppTheme.space8),
               TextFormField(
                 controller: _mileageRateController,
                 textInputAction: TextInputAction.next,
@@ -256,11 +271,13 @@ class _VehicleFormState extends ConsumerState<_VehicleForm> {
                     const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(
                   labelText: 'Mileage rate (per km)',
-                  helperText: 'Leave blank to use the global default rate',
+                  helperText: 'Applies to business trips only. Leave blank '
+                      'to use the global default rate.',
+                  helperMaxLines: 2,
                   prefixIcon: Icon(Icons.euro),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: AppTheme.space16),
               TextFormField(
                 controller: _initialOdometerController,
                 textInputAction: TextInputAction.done,
@@ -275,56 +292,78 @@ class _VehicleFormState extends ConsumerState<_VehicleForm> {
                   return parsed == null ? 'Enter a valid number' : null;
                 },
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: AppTheme.space16),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Set as default vehicle'),
                 value: _isDefault,
                 onChanged: (value) => setState(() => _isDefault = value),
               ),
-              const Divider(height: 24),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.bluetooth),
-                title: Text(isPaired
-                    ? (_bluetoothDeviceName ?? _bluetoothMac!)
-                    : 'No paired device'),
-                subtitle: Text(
-                  isPaired
-                      ? _bluetoothMac!
-                      : 'Pair a Bluetooth device to auto-start trips',
+              const SizedBox(height: AppTheme.space20),
+              const _SectionLabel('BLUETOOTH'),
+              const SizedBox(height: AppTheme.space8),
+              Container(
+                decoration: BoxDecoration(
+                  color: colors.surfaceElevated,
+                  border: Border.all(color: colors.border),
+                  borderRadius: BorderRadius.circular(AppTheme.cardRadius),
                 ),
-                trailing: _resolvingDeviceName
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : isPaired
-                        ? IconButton(
-                            icon: const Icon(Icons.close),
-                            tooltip: 'Forget device',
-                            onPressed: _handleForgetDevice,
-                          )
-                        : const Icon(Icons.chevron_right),
-                onTap: _handlePairDevice,
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  children: [
+                    ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: AppTheme.space16,
+                        vertical: AppTheme.space14,
+                      ),
+                      leading: Icon(Icons.bluetooth, color: colors.accent),
+                      title: Text(isPaired
+                          ? (_bluetoothDeviceName ?? _bluetoothMac!)
+                          : 'No paired device'),
+                      subtitle: Text(
+                        isPaired
+                            ? _bluetoothMac!
+                            : 'Pair a Bluetooth device to auto-start trips',
+                      ),
+                      trailing: _resolvingDeviceName
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : isPaired
+                              ? IconButton(
+                                  icon: const Icon(Icons.close),
+                                  tooltip: 'Forget device',
+                                  onPressed: _handleForgetDevice,
+                                )
+                              : Icon(Icons.chevron_right,
+                                  color: colors.textDimmer),
+                      onTap: _handlePairDevice,
+                    ),
+                    if (isPaired)
+                      SwitchListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.space16,
+                          vertical: AppTheme.space14,
+                        ),
+                        title: const Text('Auto-start trip on connect'),
+                        subtitle: const Text(
+                          'Starts tracking when this device connects, '
+                          'pauses on disconnect',
+                        ),
+                        value: _bluetoothAutoStart,
+                        onChanged: (value) =>
+                            setState(() => _bluetoothAutoStart = value),
+                      ),
+                  ],
+                ),
               ),
-              if (isPaired)
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Auto-start trip on connect'),
-                  subtitle: const Text(
-                    'Starts tracking when this device connects, pauses on disconnect',
-                  ),
-                  value: _bluetoothAutoStart,
-                  onChanged: (value) =>
-                      setState(() => _bluetoothAutoStart = value),
-                ),
-              const SizedBox(height: 24),
+              const SizedBox(height: AppTheme.space24),
               ElevatedButton(
                 onPressed: _isSaving ? null : _handleSave,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  padding: const EdgeInsets.symmetric(vertical: AppTheme.space4),
                   child: _isSaving
                       ? const SizedBox(
                           height: 20,
@@ -338,6 +377,24 @@ class _VehicleFormState extends ConsumerState<_VehicleForm> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.title);
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return Text(
+      title,
+      style: Theme.of(context)
+          .textTheme
+          .labelSmall
+          ?.copyWith(color: colors.textDimmer, letterSpacing: 1.2),
     );
   }
 }

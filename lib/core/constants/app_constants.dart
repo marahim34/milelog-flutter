@@ -29,7 +29,7 @@ class AppConstants {
 
   // ── Mileage defaults ───────────────────────────────────────────────────
   static const double defaultMileageRate = 0.55;
-  static const String defaultCurrencySymbol = '€';
+  static const String defaultCurrencyCode = 'EUR';
 
   // ── Backup / sync ───────────────────────────────────────────────────────
   static const int firestoreBatchSize = 450;
