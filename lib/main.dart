@@ -57,7 +57,7 @@ void main() async {
     //   broadcasts a pause/resume action from the notification buttons.
     if (Platform.isAndroid) {
       const nativeTrackingChannel =
-          MethodChannel('com.example.milelog_flutter/tracking');
+          MethodChannel('com.aisora.goodo/tracking');
       nativeTrackingChannel.setMethodCallHandler((call) async {
         switch (call.method) {
           case 'navigateToTracking':
@@ -120,7 +120,7 @@ void main() async {
         paletteProvider.overrideWith((ref) => initialPalette),
         themeModeProvider.overrideWith((ref) => initialThemeMode),
       ],
-      child: const MileLogApp(),
+      child: const GoOdoApp(),
     ),
   );
 }

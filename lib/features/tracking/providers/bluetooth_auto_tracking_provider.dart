@@ -11,29 +11,28 @@ import '../../home/providers/bluetooth_auto_tracking_enabled_provider.dart';
 import 'tracking_notifier.dart';
 import 'tracking_screen_args.dart';
 
-/// A disconnect's snapshot, held in memory while its 3-minute merge window
-/// is open — see [BluetoothAutoTrackingController._handleDisconnected].
-class _PendingStop {
-  _PendingStop({required this.timer});
+/// Tracks a pending BT disconnect while its 20-second debounce window is open.
+class _PendingDebounce {
+  _PendingDebounce({required this.timer});
   final Timer timer;
-  bool committed = false;
 }
 
 /// App-lifetime listener that maps native Bluetooth ACL events to trip
-/// start/pause/waypoint recording, mirroring the Kotlin reference app's
-/// `BluetoothReceiver` (MAC-keyed vehicle lookup, gated on
-/// `bluetoothAutoStart`) plus a 3-minute short-stop merge window so a
-/// parking-lot shuffle or a brief signal drop doesn't get recorded as two
-/// separate stops.
+/// pause/resume, with a 20-second debounce on disconnect to absorb brief
+/// signal drops, engine restarts, and car startup delays without recording
+/// a false pause waypoint.
 ///
-/// Scope (disclosed, not a bug): the in-memory merge timer here only
-/// survives while this process is alive — i.e. for the whole drive, since
-/// the active foreground service keeps the process alive even when
-/// backgrounded. It does not survive the process being killed outright;
-/// that case is handled separately by the native static receiver +
-/// WorkManager-backed durable timer (see `BluetoothAclReceiver.kt` and
-/// `background_tracking_service.dart`), which drives the very same
-/// [handleAclAction] entry point from a headless wake.
+/// Lifecycle:
+///   ACL_DISCONNECTED   → start 20-second debounce timer
+///   Reconnect < 20 s   → cancel timer; continue tracking as if nothing happened
+///   No reconnect ≥ 20 s → [TrackingNotifier.pause] (which also writes the pause
+///                         waypoint with a reverse-geocoded address)
+///   ACL_CONNECTED (paused) → [TrackingNotifier.resume] (writes resume waypoint)
+///
+/// Scope: the in-memory debounce timer only survives while this process is alive
+/// (i.e. for the whole drive, since TrackingService keeps the process alive even
+/// when backgrounded). The killed-app path is handled by [BluetoothAutoStartReceiver]
+/// in Kotlin, which runs the same 20-second debounce via a companion-object Handler.
 class BluetoothAutoTrackingController {
   BluetoothAutoTrackingController(this._ref) {
     _subscription = BluetoothService.aclEvents.listen(
@@ -45,14 +44,12 @@ class BluetoothAutoTrackingController {
   final Ref _ref;
   late final StreamSubscription<BluetoothAclEvent> _subscription;
 
-  static const mergeWindow = Duration(minutes: 3);
-
-  /// Keyed by Bluetooth MAC — at most one pending stop per vehicle.
-  final Map<String, _PendingStop> _pendingStops = {};
+  /// Keyed by Bluetooth MAC — at most one pending debounce timer per vehicle.
+  final Map<String, _PendingDebounce> _pendingDebounces = {};
 
   /// Core BT-event handling, callable directly (not just from the live ACL
   /// stream) so a headless wake driven by the native receiver can reuse the
-  /// exact same vehicle-matching/merge/waypoint logic.
+  /// exact same vehicle-matching/debounce/waypoint logic.
   Future<void> handleAclAction({
     required BluetoothAclAction action,
     required String mac,
@@ -75,80 +72,66 @@ class BluetoothAutoTrackingController {
 
   Future<void> _handleConnected(String mac, Vehicle vehicle) async {
     if (!_ref.exists(trackingNotifierProvider)) {
-      // Native BluetoothAutoStartReceiver already created the trip and
-      // started TrackingService on ACL_CONNECTED. Attempting AppRouter.push()
-      // here is blocked by Android 12+ background-activity-launch restrictions
-      // — it silently fails for all non-foreground states, which was the root
-      // cause of "auto-start works once then stops". The user opens the app
-      // via the TrackingService persistent notification; crash recovery then
-      // surfaces the active trip automatically.
+      // Native BluetoothAutoStartReceiver already handled this in the killed-app
+      // path — the trip was started via TrackingService notification. Attempting
+      // AppRouter.push() here is blocked by Android 12+ background-activity-launch
+      // restrictions. The user opens the app via the persistent notification;
+      // crash recovery surfaces the active trip automatically.
       return;
     }
 
     final notifier = _ref.read(trackingNotifierProvider.notifier);
     final status = _ref.read(trackingNotifierProvider).status;
-    final pending = _pendingStops.remove(mac);
 
+    // Reconnected within the 20-second debounce window — cancel the pending
+    // pause timer and continue tracking without any waypoints.
+    final pending = _pendingDebounces.remove(mac);
     if (pending != null) {
       pending.timer.cancel();
-      if (pending.committed) {
-        // The merge window had already elapsed and the stop was written —
-        // this reconnect is a real resume, so record the matching waypoint.
-        final snapshot = notifier.currentSnapshot;
-        if (snapshot != null) {
-          await _ref.read(tripRepositoryProvider).recordResumeWaypoint(
-                tripId: snapshot.tripId,
-                latitude: snapshot.latitude,
-                longitude: snapshot.longitude,
-                distanceKmAtStop: snapshot.distanceKm,
-              );
-        }
-      }
-      // else: reconnected within the merge window — parking-lot shuffle,
-      // nothing was ever committed, so there's nothing to undo.
+      return;
     }
 
-    if (status == TrackingStatus.paused) notifier.resume();
+    // No pending debounce: either a fresh connect or a reconnect after the
+    // trip was already paused (debounce fired).
+    if (status == TrackingStatus.paused) {
+      notifier.resume(); // also writes resume waypoint with geocoded address
+    }
   }
 
   Future<void> _handleDisconnected(String mac, Vehicle vehicle) async {
     if (!_ref.exists(trackingNotifierProvider)) return;
-    final notifier = _ref.read(trackingNotifierProvider.notifier);
     final status = _ref.read(trackingNotifierProvider).status;
     if (status != TrackingStatus.active) return;
 
-    final snapshot = notifier.currentSnapshot;
-    notifier.pause();
-    if (snapshot == null) return;
+    // Cancel any existing debounce (rapid multi-disconnect for the same vehicle).
+    _pendingDebounces[mac]?.timer.cancel();
+    _pendingDebounces.remove(mac);
 
-    final pending = _PendingStop(
-      timer: Timer(mergeWindow, () async {
-        final stillPending = _pendingStops[mac];
-        if (stillPending == null) return; // cancelled by a reconnect
-        // If the trip ended in the meantime (notifier disposed), don't
-        // attach a stray waypoint to a trip that already finished.
+    // Start the 20-second debounce. If BT reconnects within this window,
+    // _handleConnected cancels the timer and tracking continues uninterrupted.
+    // After 20 seconds with no reconnect, we pause the trip — notifier.pause()
+    // stops GPS and writes the pause waypoint (with geocoded address).
+    _pendingDebounces[mac] = _PendingDebounce(
+      timer: Timer(const Duration(seconds: 20), () {
+        _pendingDebounces.remove(mac);
         if (!_ref.exists(trackingNotifierProvider)) return;
-        await _ref.read(tripRepositoryProvider).recordPauseWaypoint(
-              tripId: snapshot.tripId,
-              latitude: snapshot.latitude,
-              longitude: snapshot.longitude,
-              distanceKmAtStop: snapshot.distanceKm,
-            );
-        stillPending.committed = true;
+        final currentStatus = _ref.read(trackingNotifierProvider).status;
+        if (currentStatus != TrackingStatus.active) return;
+        _ref.read(trackingNotifierProvider.notifier).pause();
       }),
     );
-    _pendingStops[mac] = pending;
   }
 
   void dispose() {
     _subscription.cancel();
-    for (final pending in _pendingStops.values) {
+    for (final pending in _pendingDebounces.values) {
       pending.timer.cancel();
     }
+    _pendingDebounces.clear();
   }
 }
 
-/// Kept alive for the app's lifetime by being watched once from [MileLogApp]
+/// Kept alive for the app's lifetime by being watched once from [GoOdoApp]
 /// — not autoDispose, since it must keep listening even when no tracking
 /// screen is open.
 final bluetoothAutoTrackingProvider =

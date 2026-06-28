@@ -281,7 +281,7 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                       TileLayer(
                         urlTemplate:
                             'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        userAgentPackageName: 'com.milelog.app',
+                        userAgentPackageName: 'com.aisora.goodo',
                       ),
                       if (routePoints.length > 1)
                         PolylineLayer(

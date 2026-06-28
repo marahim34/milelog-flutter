@@ -1,4 +1,4 @@
-package com.example.milelog_flutter
+package com.aisora.goodo
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -159,7 +159,7 @@ object BluetoothAutoTrackPrefs {
 
         val notification = NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-            .setContentTitle("MileLog")
+            .setContentTitle("GoOdo")
             .setContentText("Your vehicle's Bluetooth connected — tap to start tracking")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)

@@ -33,9 +33,9 @@ class BluetoothService {
   BluetoothService._();
 
   static const _methodChannel =
-      MethodChannel('com.example.milelog_flutter/bluetooth');
+      MethodChannel('com.aisora.goodo/bluetooth');
   static const _eventChannel =
-      EventChannel('com.example.milelog_flutter/bluetooth_acl');
+      EventChannel('com.aisora.goodo/bluetooth_acl');
 
   static Future<bool> hasPermission() async {
     final result =

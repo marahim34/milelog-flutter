@@ -1,4 +1,4 @@
-package com.example.milelog_flutter
+package com.aisora.goodo
 
 import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
@@ -8,28 +8,31 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.sqlite.SQLiteDatabase
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.core.content.ContextCompat
 
 /**
  * Static (manifest-declared) receiver for Bluetooth ACL events and BOOT_COMPLETED.
  *
- * Replaces the old [BluetoothAclReceiver] + dynamic `MainActivity` registration
- * pattern. This receiver fires for every Bluetooth connect/disconnect regardless
- * of whether the Flutter engine is alive, which is the core fix for the
- * "auto-start only works once" bug:
+ * Trip lifecycle — killed-app / backgrounded path (engine dead):
  *
- *   Old flow (broken on Android 12+):
- *     connect → if(isEngineAlive) return → Dart tries AppRouter.push() → BLOCKED
+ *   ACL_DISCONNECTED → start a 20-second debounce timer (handles engine restarts,
+ *                      brief signal drops, and car startup delay without recording
+ *                      a false pause waypoint)
+ *   Reconnect < 20 s  → cancel the timer; continue tracking as if nothing happened
+ *   No reconnect ≥ 20 s → send ACTION_PAUSE to TrackingService; the service stops
+ *                         GPS and writes the pause waypoint immediately
  *
- *   New flow:
- *     connect → query DB directly → create trip if needed → start TrackingService
- *     (TrackingService shows its own persistent "Tracking active" notification)
+ *   ACL_CONNECTED (service already paused) → send ACTION_RESUME
+ *   ACL_CONNECTED (service not running)    → start new trip or re-use existing active one
  *
- * ACL_DISCONNECTED delegates to [BluetoothAutoTrackPrefs] for the 3-minute
- * merge window, then stops [TrackingService] once the window commits.
+ * When the Flutter engine is alive ([AppProcessState.isEngineAlive] = true) all
+ * handling is delegated to Dart's [BluetoothAutoTrackingController] which runs
+ * its own 20-second debounce. This receiver is the killed-app fallback.
  *
- * BOOT_COMPLETED is a no-op — the registration alone lifts Android's
- * "stopped state" restriction so ACL events are delivered after reboot.
+ * BOOT_COMPLETED is a no-op — the registration alone lifts Android's "stopped
+ * state" restriction so ACL events are delivered after a reboot.
  */
 class BluetoothAutoStartReceiver : BroadcastReceiver() {
 
@@ -52,21 +55,30 @@ class BluetoothAutoStartReceiver : BroadcastReceiver() {
     // ── Connect ───────────────────────────────────────────────────────────────
 
     private fun handleConnect(context: Context, mac: String) {
-        // When the engine is alive the dynamic EventChannel in MainActivity
-        // already forwards this connect to Dart's BluetoothAutoTrackingController.
-        // Acting here too would open a second DB write path and potentially
-        // create duplicate trips alongside an already-active Dart session.
         if (AppProcessState.isEngineAlive) return
 
         val vehicle = queryVehicle(context, mac) ?: return
         if (!vehicle.autoStart) return
 
-        // Re-use an already-active trip for this vehicle so a brief signal drop
-        // or reconnect within the 3-min merge window doesn't create a duplicate.
+        // Reconnected within the 20-second debounce window — cancel the pending
+        // pause and continue tracking without recording any waypoint.
+        if (pendingMac == mac) {
+            cancelPendingPause()
+            if (TrackingService.isRunning && !TrackingService.isPaused) return
+        }
+
+        if (TrackingService.isRunning) {
+            // Service is alive — resume if paused, otherwise already tracking.
+            if (TrackingService.isPaused) {
+                sendActionToService(context, TrackingService.ACTION_RESUME)
+            }
+            return
+        }
+
+        // Service not running — re-use an existing active trip or create a new one.
         val existing = queryActiveTrip(context, vehicle.plateNumber)
         val tripId: Int
         val startMs: Long
-
         if (existing != null) {
             tripId = existing.first
             startMs = existing.second
@@ -75,7 +87,6 @@ class BluetoothAutoStartReceiver : BroadcastReceiver() {
             tripId = insertTrip(context, vehicle.plateNumber, startMs)
             if (tripId < 0) return
         }
-
         val svc = TrackingService.startIntent(context, tripId, startMs)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(svc)
@@ -87,20 +98,47 @@ class BluetoothAutoStartReceiver : BroadcastReceiver() {
     // ── Disconnect ────────────────────────────────────────────────────────────
 
     private fun handleDisconnect(context: Context, mac: String) {
-        // In-app case: Dart's BluetoothAutoTrackingController listens to the
-        // dynamic EventChannel in MainActivity and handles the pause + merge
-        // window in memory. Let it run — acting here too would double-write.
         if (AppProcessState.isEngineAlive) return
 
-        // Killed-app case: look up vehicleId from DB (same logic, no stale cache).
-        val vehicle = queryVehicle(context, mac) ?: return
+        queryVehicle(context, mac) ?: return
 
-        // Stop GPS immediately on disconnect; TrackingService will flush its
-        // point buffer. The 3-min WorkManager job (scheduled below via
-        // BluetoothAutoTrackPrefs) may restart it on reconnect.
-        context.stopService(Intent(context, TrackingService::class.java))
+        // Only act when the service is actively tracking (not already paused/stopped).
+        if (!TrackingService.isRunning || TrackingService.isPaused) return
 
-        BluetoothAutoTrackPrefs.handleAclEvent(context, mac, vehicle.id, connected = false)
+        // Cancel any existing debounce (rapid multi-disconnect for the same vehicle).
+        cancelPendingPause()
+
+        // Start the 20-second debounce. Reconnect within this window cancels the
+        // timer — no pause, no waypoint. After 20 s with no reconnect the service
+        // is paused and writes the pause waypoint immediately inside ACTION_PAUSE.
+        val appContext = context.applicationContext
+        val r = Runnable {
+            pendingPause = null
+            pendingMac = null
+            if (TrackingService.isRunning && !TrackingService.isPaused) {
+                sendActionToService(appContext, TrackingService.ACTION_PAUSE)
+            }
+        }
+        pendingMac = mac
+        pendingPause = r
+        mainHandler.postDelayed(r, DEBOUNCE_MS)
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /** Sends an action intent to TrackingService (guaranteed already running here). */
+    private fun sendActionToService(context: Context, action: String) {
+        // The service is already running — use startService so Android doesn't
+        // enforce the 5-second startForeground() deadline for new services.
+        context.startService(
+            Intent(context, TrackingService::class.java).apply { this.action = action }
+        )
+    }
+
+    private fun cancelPendingPause() {
+        pendingPause?.let { mainHandler.removeCallbacks(it) }
+        pendingPause = null
+        pendingMac = null
     }
 
     // ── Database helpers ──────────────────────────────────────────────────────
@@ -112,7 +150,7 @@ class BluetoothAutoStartReceiver : BroadcastReceiver() {
         // drift_flutter places the DB in getApplicationDocumentsDirectory(),
         // which path_provider_android resolves to <dataDir>/app_flutter/.
         // dataDir = filesDir.parentFile (i.e. /data/user/0/<pkg>/, NOT .../files/).
-        val path = context.filesDir.parentFile!!.absolutePath + "/app_flutter/milelog.sqlite"
+        val path = context.filesDir.parentFile!!.absolutePath + "/app_flutter/goodo.sqlite"
         SQLiteDatabase.openDatabase(
             path, null,
             SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.NO_LOCALIZED_COLLATORS
@@ -186,4 +224,18 @@ class BluetoothAutoStartReceiver : BroadcastReceiver() {
 
     private fun deviceMac(intent: Intent): String? =
         intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)?.address
+
+    // ── Companion (20-second debounce state) ──────────────────────────────────
+
+    companion object {
+        private const val DEBOUNCE_MS = 20_000L
+
+        private val mainHandler = Handler(Looper.getMainLooper())
+
+        /** MAC address that currently has a pending 20-second pause timer, or null. */
+        @Volatile private var pendingMac: String? = null
+
+        /** The pending Runnable scheduled via [mainHandler], or null. */
+        @Volatile private var pendingPause: Runnable? = null
+    }
 }

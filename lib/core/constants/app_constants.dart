@@ -2,7 +2,7 @@ class AppConstants {
   AppConstants._();
 
   // ── Database ────────────────────────────────────────────────────────────
-  static const String dbName = 'milelog';
+  static const String dbName = 'goodo';
   static const int dbVersion = 1;
 
   // ── GPS tracking ────────────────────────────────────────────────────────

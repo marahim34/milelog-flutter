@@ -10,7 +10,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/milelog_logo.dart';
+import '../../../core/widgets/goodo_logo.dart';
 import '../../../data/database/app_database.dart';
 import '../../../data/models/trip_type.dart';
 import '../../../data/providers/database_provider.dart';
@@ -44,7 +44,7 @@ class _DriveTabState extends ConsumerState<DriveTab> {
   bool _autoNavigated = false;
 
   static const _trackingChannel =
-      MethodChannel('com.example.milelog_flutter/tracking');
+      MethodChannel('com.aisora.goodo/tracking');
 
   @override
   void initState() {
@@ -321,7 +321,7 @@ class _Header extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const MileLogLogo(size: 32),
+          const GoOdoLogo(size: 32),
           const SizedBox(width: 10),
           Text(
             _greeting().toUpperCase(),

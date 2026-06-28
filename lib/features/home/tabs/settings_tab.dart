@@ -554,9 +554,9 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                 child: Text(
                   packageInfo.when(
                     data: (info) =>
-                        'MILELOG · v${info.version} · BUILD ${info.buildNumber}',
-                    loading: () => 'MILELOG',
-                    error: (_, __) => 'MILELOG',
+                        'GOODO · v${info.version} · BUILD ${info.buildNumber}',
+                    loading: () => 'GOODO',
+                    error: (_, __) => 'GOODO',
                   ),
                   style: Theme.of(context).textTheme.labelSmall,
                 ),
@@ -588,9 +588,9 @@ class _Header extends StatelessWidget {
         children: [
           Text(
             packageInfo.when(
-              data: (info) => 'MILELOG / v${info.version}',
-              loading: () => 'MILELOG',
-              error: (_, __) => 'MILELOG',
+              data: (info) => 'GOODO / v${info.version}',
+              loading: () => 'GOODO',
+              error: (_, __) => 'GOODO',
             ),
             style: Theme.of(context).textTheme.labelSmall,
           ),

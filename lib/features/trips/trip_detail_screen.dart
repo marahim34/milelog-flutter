@@ -350,7 +350,7 @@ class _TripDetailBodyState extends State<_TripDetailBody> {
                     TileLayer(
                       urlTemplate:
                           'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.milelog.app',
+                      userAgentPackageName: 'com.aisora.goodo',
                     ),
                     // Always the full-resolution trace — clustering below
                     // only affects stop markers, never the route line, so

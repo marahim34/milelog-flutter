@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:milelog_flutter/data/database/app_database.dart';
-import 'package:milelog_flutter/features/trips/utils/trip_stop_detector.dart';
+import 'package:goodo/data/database/app_database.dart';
+import 'package:goodo/features/trips/utils/trip_stop_detector.dart';
 
 LocationPoint _point({
   required double lat,

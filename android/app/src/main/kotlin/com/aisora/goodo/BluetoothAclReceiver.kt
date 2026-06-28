@@ -1,4 +1,4 @@
-package com.example.milelog_flutter
+package com.aisora.goodo
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -37,9 +37,9 @@ class BluetoothAclReceiver : BroadcastReceiver() {
                     if (queryVehicleCount(context) == 0) {
                         showAlertNotification(
                             context,
-                            title = "MileLog — Vehicle Required",
+                            title = "GoOdo — Vehicle Required",
                             content = "Bluetooth connected but no vehicle registered. " +
-                                "Open MileLog to add your vehicle.",
+                                "Open GoOdo to add your vehicle.",
                             openVehicles = true,
                         )
                     }
@@ -50,7 +50,7 @@ class BluetoothAclReceiver : BroadcastReceiver() {
                 if (odometer <= 0.0) {
                     showAlertNotification(
                         context,
-                        title = "MileLog — Odometer Required",
+                        title = "GoOdo — Odometer Required",
                         content = "Please set your vehicle's odometer reading before tracking can start.",
                         openVehicles = true,
                     )
@@ -90,7 +90,7 @@ class BluetoothAclReceiver : BroadcastReceiver() {
     /** Returns total number of vehicles in the Drift SQLite database. */
     private fun queryVehicleCount(context: Context): Int {
         val dir = context.filesDir.parentFile ?: return 0
-        val dbPath = dir.absolutePath + "/app_flutter/milelog.sqlite"
+        val dbPath = dir.absolutePath + "/app_flutter/goodo.sqlite"
         return try {
             android.database.sqlite.SQLiteDatabase.openDatabase(
                 dbPath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
@@ -107,7 +107,7 @@ class BluetoothAclReceiver : BroadcastReceiver() {
     /** Returns `initialOdometer` for the given vehicle id, or 0.0 on any error. */
     private fun queryInitialOdometer(context: Context, vehicleId: Int): Double {
         val dir = context.filesDir.parentFile ?: return 0.0
-        val dbPath = dir.absolutePath + "/app_flutter/milelog.sqlite"
+        val dbPath = dir.absolutePath + "/app_flutter/goodo.sqlite"
         return try {
             android.database.sqlite.SQLiteDatabase.openDatabase(
                 dbPath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
@@ -136,7 +136,7 @@ class BluetoothAclReceiver : BroadcastReceiver() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 ALERT_CHANNEL_ID,
-                "MileLog Alerts",
+                "GoOdo Alerts",
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply { enableVibration(true) }
             nm.createNotificationChannel(channel)
@@ -169,7 +169,7 @@ class BluetoothAclReceiver : BroadcastReceiver() {
     }
 
     companion object {
-        private const val ALERT_CHANNEL_ID = "milelog_alerts"
+        private const val ALERT_CHANNEL_ID = "goodo_alerts"
         private const val ALERT_NOTIFICATION_ID = 9002
         const val EXTRA_OPEN_VEHICLES = "open_vehicles"
     }

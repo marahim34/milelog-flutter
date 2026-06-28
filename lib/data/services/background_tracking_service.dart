@@ -30,7 +30,7 @@ class BackgroundTrackingService {
   BackgroundTrackingService._();
 
   static const _trackingChannel =
-      MethodChannel('com.example.milelog_flutter/tracking');
+      MethodChannel('com.aisora.goodo/tracking');
   static final _service = FlutterBackgroundService();
 
   /// Registers the flutter_background_service handlers (iOS + Android Bluetooth).
@@ -46,7 +46,7 @@ class BackgroundTrackingService {
         autoStart: false,
         autoStartOnBoot: false,
         isForegroundMode: true,
-        initialNotificationTitle: 'MileLog',
+        initialNotificationTitle: 'GoOdo',
         initialNotificationContent: 'Preparing to track your trip…',
         foregroundServiceNotificationId: AppConstants.trackingNotificationId,
         foregroundServiceTypes: const [AndroidForegroundType.location],
@@ -167,7 +167,7 @@ void _onStart(ServiceInstance service) {
     final elapsedSeconds = (args['elapsedSeconds'] as num?)?.toInt() ?? 0;
 
     service.setForegroundNotificationInfo(
-      title: 'MileLog — Tracking',
+      title: 'GoOdo — Tracking',
       content:
           '${distanceKm.toStringAsFixed(1)} km • ${_formatDuration(elapsedSeconds)}',
     );

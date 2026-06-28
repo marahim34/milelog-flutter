@@ -165,7 +165,8 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
   StreamSubscription<double>? _speedSub;
   StreamSubscription<double>? _distanceSub;
   bool _disposed = false;
-  bool _startLocationCaptured = false;
+  bool _startCoordsCaptured = false; // set from first raw GPS fix
+  bool _startLocationCaptured = false; // set from first accurate tracked point
 
   // Stored at trip start for use in auto-stop finalization.
   TripType _tripType = TripType.business;
@@ -498,10 +499,28 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
 
   /// Updates the live marker position. Raw fixes can be noisy, so this must
   /// not feed the route polyline — see [_onTrackedPoint].
+  ///
+  /// Also captures start lat/lng from the very first fix so trips that end
+  /// before an accurate point arrives still show coordinates, not "Unknown".
   void _onRawPosition(Position position) {
     state = state.copyWith(
       currentPosition: LatLng(position.latitude, position.longitude),
     );
+
+    if (!_startCoordsCaptured) {
+      _startCoordsCaptured = true;
+      final tripId = state.tripId;
+      if (tripId != null) {
+        unawaited(
+          ref.read(tripRepositoryProvider).updateTripStartLocation(
+            tripId: tripId,
+            latitude: position.latitude,
+            longitude: position.longitude,
+            address: '', // tracked point will overwrite with geocoded address
+          ),
+        );
+      }
+    }
   }
 
   /// Appends a point that passed [LocationTrackingService]'s accuracy
@@ -663,8 +682,10 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
 
     final lastPoint =
         _locationService.points.isNotEmpty ? _locationService.points.last : null;
-    final endAddress = lastPoint != null
-        ? await ReverseGeocoder.lookup(lastPoint.latitude, lastPoint.longitude)
+    final endLat = lastPoint?.latitude ?? state.currentPosition?.latitude;
+    final endLng = lastPoint?.longitude ?? state.currentPosition?.longitude;
+    final endAddress = endLat != null
+        ? await ReverseGeocoder.lookup(endLat, endLng!)
         : '';
     if (_disposed) return;
 
@@ -691,8 +712,8 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
       odometerEnd: _vehicleOdometer + distanceKm,
       mileageRate: effectiveRate,
       notes: 'Auto-stopped after 60 minutes of inactivity',
-      endLat: lastPoint?.latitude,
-      endLng: lastPoint?.longitude,
+      endLat: endLat,
+      endLng: endLng,
       endAddress: endAddress,
     );
 
@@ -791,8 +812,10 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
 
     final lastPoint =
         _locationService.points.isNotEmpty ? _locationService.points.last : null;
-    final endAddress = lastPoint != null
-        ? await ReverseGeocoder.lookup(lastPoint.latitude, lastPoint.longitude)
+    final endLat = lastPoint?.latitude ?? state.currentPosition?.latitude;
+    final endLng = lastPoint?.longitude ?? state.currentPosition?.longitude;
+    final endAddress = endLat != null
+        ? await ReverseGeocoder.lookup(endLat, endLng!)
         : '';
 
     await repository.finalizeTrip(
@@ -808,8 +831,8 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
       odometerEnd: _vehicleOdometer + distanceKm,
       mileageRate: effectiveRate,
       notes: notes,
-      endLat: lastPoint?.latitude,
-      endLng: lastPoint?.longitude,
+      endLat: endLat,
+      endLng: endLng,
       endAddress: endAddress,
     );
   }

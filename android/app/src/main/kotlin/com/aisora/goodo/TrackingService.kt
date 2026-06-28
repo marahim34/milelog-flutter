@@ -1,4 +1,4 @@
-package com.example.milelog_flutter
+package com.aisora.goodo
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -66,22 +66,22 @@ class TrackingService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     companion object {
-        const val CHANNEL_ID = "milelog_tracking"
+        const val CHANNEL_ID = "goodo_tracking"
         const val NOTIFICATION_ID = 1001
         const val INACTIVITY_NOTIFICATION_ID = 1002
         const val AUTO_STOP_NOTIFICATION_ID = 1003
-        const val ACTION_STOP = "com.example.milelog_flutter.STOP_TRACKING"
-        const val ACTION_PAUSE = "com.example.milelog_flutter.PAUSE_TRACKING"
-        const val ACTION_RESUME = "com.example.milelog_flutter.RESUME_TRACKING"
-        const val ACTION_KEEP_ACTIVE = "com.example.milelog_flutter.KEEP_ACTIVE"
-        const val ACTION_STATE_CHANGED = "com.example.milelog_flutter.TRACKING_STATE_CHANGED"
-        const val ACTION_AUTO_STOPPED = "com.example.milelog_flutter.AUTO_STOPPED"
+        const val ACTION_STOP = "com.aisora.goodo.STOP_TRACKING"
+        const val ACTION_PAUSE = "com.aisora.goodo.PAUSE_TRACKING"
+        const val ACTION_RESUME = "com.aisora.goodo.RESUME_TRACKING"
+        const val ACTION_KEEP_ACTIVE = "com.aisora.goodo.KEEP_ACTIVE"
+        const val ACTION_STATE_CHANGED = "com.aisora.goodo.TRACKING_STATE_CHANGED"
+        const val ACTION_AUTO_STOPPED = "com.aisora.goodo.AUTO_STOPPED"
         const val EXTRA_TRIP_ID = "trip_id"
         const val EXTRA_START_TIME = "start_time"
         const val EXTRA_ODOMETER_START = "odometer_start"
         const val EXTRA_OPEN_TRACKING = "open_tracking"
 
-        private const val INACTIVITY_CHANNEL_ID = "milelog_alerts"
+        private const val INACTIVITY_CHANNEL_ID = "goodo_alerts"
         private const val INACTIVITY_IDLE_MS = 60L * 60_000L  // 60 minutes
         private const val INACTIVITY_WARN_MS  = 50L * 60_000L  // 50 minutes
 
@@ -107,7 +107,7 @@ class TrackingService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        dbThread = HandlerThread("MileLog-DB").also { it.start() }
+        dbThread = HandlerThread("GoOdo-DB").also { it.start() }
         dbHandler = Handler(dbThread.looper)
     }
 
@@ -204,7 +204,7 @@ class TrackingService : Service() {
             mgr.createNotificationChannel(
                 NotificationChannel(
                     CHANNEL_ID,
-                    "MileLog Tracking",
+                    "GoOdo Tracking",
                     NotificationManager.IMPORTANCE_LOW
                 ).apply {
                     description = "Active GPS trip tracking"
@@ -236,7 +236,7 @@ class TrackingService : Service() {
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val title = if (isPaused) "MileLog — Trip Paused" else "MileLog — Tracking Active"
+        val title = if (isPaused) "GoOdo — Trip Paused" else "GoOdo — Tracking Active"
         val pauseLabel = if (isPaused) "Resume" else "Pause"
         val pauseIcon = if (isPaused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause
         NotificationCompat.Builder(this, CHANNEL_ID)
@@ -267,12 +267,13 @@ class TrackingService : Service() {
         val loc = lastLocation ?: return
         dbHandler.post {
             val localDb = db ?: run { openDatabase(); db } ?: return@post
+            val address = geocode(loc.latitude, loc.longitude)
             try {
                 localDb.insertOrThrow("trip_waypoints", null, ContentValues().apply {
                     put("trip_id", tripId)
                     put("latitude", loc.latitude)
                     put("longitude", loc.longitude)
-                    put("address", "")
+                    put("address", address)
                     put("distance_km_at_stop", totalDistanceKm)
                     put("timestamp", System.currentTimeMillis())
                     put("is_pause", 1)
@@ -285,12 +286,13 @@ class TrackingService : Service() {
         val loc = lastLocation ?: return
         dbHandler.post {
             val localDb = db ?: run { openDatabase(); db } ?: return@post
+            val address = geocode(loc.latitude, loc.longitude)
             try {
                 localDb.insertOrThrow("trip_waypoints", null, ContentValues().apply {
                     put("trip_id", tripId)
                     put("latitude", loc.latitude)
                     put("longitude", loc.longitude)
-                    put("address", "")
+                    put("address", address)
                     put("distance_km_at_stop", totalDistanceKm)
                     put("timestamp", System.currentTimeMillis())
                     put("is_pause", 0)
@@ -304,7 +306,7 @@ class TrackingService : Service() {
         @Suppress("WakelockTimeout")
         wakeLock = pm.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
-            "MileLog:TrackingWakeLock"
+            "GoOdo:TrackingWakeLock"
         ).also { it.acquire(12 * 60 * 60 * 1000L) }
     }
 
@@ -313,7 +315,7 @@ class TrackingService : Service() {
             // drift_flutter places the DB in getApplicationDocumentsDirectory(),
             // which path_provider_android resolves to <dataDir>/app_flutter/.
             // dataDir = filesDir.parentFile (i.e. /data/user/0/<pkg>/, NOT .../files/).
-            val path = filesDir.parentFile!!.absolutePath + "/app_flutter/milelog.sqlite"
+            val path = filesDir.parentFile!!.absolutePath + "/app_flutter/goodo.sqlite"
             db = SQLiteDatabase.openDatabase(
                 path, null,
                 SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.NO_LOCALIZED_COLLATORS
@@ -553,7 +555,7 @@ class TrackingService : Service() {
         )
         val notification = NotificationCompat.Builder(this, INACTIVITY_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-            .setContentTitle("MileLog — Inactivity Warning")
+            .setContentTitle("GoOdo — Inactivity Warning")
             .setContentText("No movement for 50 min. Trip auto-stops in 10 min.")
             .setStyle(NotificationCompat.BigTextStyle()
                 .bigText("No movement detected for 50 minutes. Trip will auto-stop in 10 minutes."))
@@ -602,7 +604,7 @@ class TrackingService : Service() {
         )
         val notification = NotificationCompat.Builder(this, INACTIVITY_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-            .setContentTitle("MileLog — Trip Auto-Stopped")
+            .setContentTitle("GoOdo — Trip Auto-Stopped")
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setDefaults(NotificationCompat.DEFAULT_ALL)
@@ -619,7 +621,7 @@ class TrackingService : Service() {
             if (nm.getNotificationChannel(INACTIVITY_CHANNEL_ID) == null) {
                 nm.createNotificationChannel(NotificationChannel(
                     INACTIVITY_CHANNEL_ID,
-                    "MileLog Alerts",
+                    "GoOdo Alerts",
                     NotificationManager.IMPORTANCE_HIGH
                 ).apply { enableVibration(true) })
             }

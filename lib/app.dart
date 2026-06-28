@@ -8,8 +8,8 @@ import 'features/tracking/providers/bluetooth_auto_tracking_provider.dart';
 import 'features/tracking/providers/trip_recovery_provider.dart';
 import 'features/tracking/providers/vehicle_bluetooth_cache_sync_provider.dart';
 
-class MileLogApp extends ConsumerWidget {
-  const MileLogApp({super.key});
+class GoOdoApp extends ConsumerWidget {
+  const GoOdoApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -23,7 +23,7 @@ class MileLogApp extends ConsumerWidget {
     final themeMode = ref.watch(themeModeProvider);
 
     return MaterialApp.router(
-      title: 'MileLog',
+      title: 'GoOdo',
       theme: AppTheme.themeFor(palette, Brightness.light),
       darkTheme: AppTheme.themeFor(palette, Brightness.dark),
       themeMode: themeMode,

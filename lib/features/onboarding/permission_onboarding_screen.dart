@@ -124,7 +124,7 @@ class _PermissionOnboardingScreenState
                   key: const ValueKey('location-step'),
                   icon: Icons.my_location,
                   title: 'Location access',
-                  body: 'MileLog uses your location to automatically track '
+                  body: 'GoOdo uses your location to automatically track '
                       'trip distance and routes, and to detect when you '
                       'arrive at a saved workplace. This is required for '
                       'the app to work.',
@@ -143,7 +143,7 @@ class _PermissionOnboardingScreenState
                       'is off or you switch to another app. Without this, '
                       'your phone may pause tracking mid-trip and miss '
                       'distance. Tap Allow on the next screen to keep '
-                      'MileLog always active.',
+                      'GoOdo always active.',
                   primaryLabel: 'Allow',
                   isBusy: _isRequesting,
                   onPrimary: _handleBatteryAllow,

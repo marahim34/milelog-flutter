@@ -1,4 +1,4 @@
-package com.example.milelog_flutter
+package com.aisora.goodo
 
 import android.Manifest
 import android.app.AlertDialog
@@ -38,10 +38,10 @@ import kotlin.concurrent.thread
  * static (manifest-declared) counterpart that covers the killed-app case.
  */
 class MainActivity : FlutterActivity() {
-    private val methodChannelName = "com.example.milelog_flutter/bluetooth"
-    private val downloadChannelName = "com.example.milelog_flutter/downloads"
-    private val trackingChannelName = "com.example.milelog_flutter/tracking"
-    private val eventChannelName = "com.example.milelog_flutter/bluetooth_acl"
+    private val methodChannelName = "com.aisora.goodo/bluetooth"
+    private val downloadChannelName = "com.aisora.goodo/downloads"
+    private val trackingChannelName = "com.aisora.goodo/tracking"
+    private val eventChannelName = "com.aisora.goodo/bluetooth_acl"
 
     private var eventSink: EventChannel.EventSink? = null
     private var aclReceiver: BroadcastReceiver? = null
@@ -402,21 +402,21 @@ class MainActivity : FlutterActivity() {
         val oemNote = when {
             manufacturer.contains("oppo") || manufacturer.contains("oneplus") ||
             manufacturer.contains("realme") ->
-                "\n\nOn your ${Build.MANUFACTURER} device you may also need to go to:\nSettings > Battery > Power Saving > App Quick Freeze\nand disable it for MileLog."
+                "\n\nOn your ${Build.MANUFACTURER} device you may also need to go to:\nSettings > Battery > Power Saving > App Quick Freeze\nand disable it for GoOdo."
             manufacturer.contains("samsung") ->
-                "\n\nOn Samsung devices you may also need to go to:\nDevice Care > Battery > Background usage limits\nand add MileLog to Never sleeping apps."
+                "\n\nOn Samsung devices you may also need to go to:\nDevice Care > Battery > Background usage limits\nand add GoOdo to Never sleeping apps."
             manufacturer.contains("xiaomi") || manufacturer.contains("redmi") ||
             manufacturer.contains("poco") ->
-                "\n\nOn Xiaomi/MIUI devices you may also need to go to:\nSettings > Apps > MileLog > Battery saver\nand set to No restrictions."
+                "\n\nOn Xiaomi/MIUI devices you may also need to go to:\nSettings > Apps > GoOdo > Battery saver\nand set to No restrictions."
             manufacturer.contains("huawei") || manufacturer.contains("honor") ->
-                "\n\nOn Huawei devices you may also need to go to:\nSettings > Apps > MileLog > Battery\nand enable Run in background."
+                "\n\nOn Huawei devices you may also need to go to:\nSettings > Apps > GoOdo > Battery\nand enable Run in background."
             else -> ""
         }
 
         AlertDialog.Builder(this)
             .setTitle("Background Tracking Required")
             .setMessage(
-                "MileLog needs to run in the background to track your trips.\n\n" +
+                "GoOdo needs to run in the background to track your trips.\n\n" +
                 "Please tap Allow on the next screen.$oemNote"
             )
             .setPositiveButton("Continue") { _, _ ->

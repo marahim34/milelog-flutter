@@ -1,4 +1,4 @@
-package com.example.milelog_flutter
+package com.aisora.goodo
 
 /**
  * Whether the Flutter engine behind `MainActivity` is currently alive in

@@ -1,5 +1,5 @@
-name: milelog_flutter
-description: Cross-platform mileage tracker — Flutter conversion of MileLog Android app.
+name: goodo
+description: GoOdo - Smart Trip & Fleet Tracker
 version: 1.0.0+1
 publish_to: 'none'
 

@@ -2,11 +2,10 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-/// Speedometer icon — MileLog Concept A from the design handoff.
-/// Background #1A0F14, accent #FF5C8A. Replicates the SVG viewBox 0 0 96 96
-/// exactly, scaled to [size].
-class MileLogLogo extends StatelessWidget {
-  const MileLogLogo({super.key, this.size = 56});
+/// Speedometer icon — GoOdo logo. Background #1A0F14, accent #FF5C8A.
+/// Replicates the SVG viewBox 0 0 96 96 exactly, scaled to [size].
+class GoOdoLogo extends StatelessWidget {
+  const GoOdoLogo({super.key, this.size = 56});
 
   final double size;
 
@@ -53,8 +52,6 @@ class _SpeedometerPainter extends CustomPainter {
     );
 
     // Arc: M18 62 A30 30 0 0 1 78 62 — half-circle through the top
-    // In Flutter canvas (y↓): start=π (left), sweep=+π clockwise → goes through
-    // angle 3π/2 (top) and ends at 2π (right). ✓
     canvas.drawArc(
       Rect.fromCircle(center: Offset(48 * sc, 62 * sc), radius: 30 * sc),
       math.pi,

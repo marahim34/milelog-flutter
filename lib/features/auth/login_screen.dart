@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/router/app_router.dart';
-import '../../core/widgets/milelog_logo.dart';
+import '../../core/widgets/goodo_logo.dart';
 import '../../data/services/session_service.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -51,11 +51,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 children: [
                   const Opacity(
                     opacity: 0.82,
-                    child: MileLogLogo(size: 80),
+                    child: GoOdoLogo(size: 80),
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'MileLog',
+                    'GoOdo',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                           fontWeight: FontWeight.bold,
