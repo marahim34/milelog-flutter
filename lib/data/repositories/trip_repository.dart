@@ -42,22 +42,50 @@ class TripRepository {
     return id;
   }
 
-  Future<List<Trip>> getCompletedTrips() => _tripsDao.getCompletedTrips();
+  Future<List<Trip>> getCompletedTrips() async {
+    try {
+      return await _tripsDao.getCompletedTrips();
+    } catch (_) {
+      return [];
+    }
+  }
 
   Stream<List<Trip>> watchCompletedTrips() => _tripsDao.watchCompletedTrips();
 
-  Future<Trip?> getTripById(int id) => _tripsDao.getTripById(id);
-
-  Future<Trip?> getActiveTripForVehicle(String vehicleNumber) async {
-    final active = await _tripsDao.getActiveTrip();
-    if (active == null || active.vehicleNumber != vehicleNumber) return null;
-    return active;
+  Future<Trip?> getTripById(int id) async {
+    try {
+      return await _tripsDao.getTripById(id);
+    } catch (_) {
+      return null;
+    }
   }
 
-  Future<Trip?> getActiveTrip() => _tripsDao.getActiveTrip();
+  Future<Trip?> getActiveTripForVehicle(String vehicleNumber) async {
+    try {
+      final active = await _tripsDao.getActiveTrip();
+      if (active == null || active.vehicleNumber != vehicleNumber) return null;
+      return active;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Trip?> getActiveTrip() async {
+    try {
+      return await _tripsDao.getActiveTrip();
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// Returns all active trips (for crash recovery detection on app launch).
-  Future<List<Trip>> getActiveTrips() => _tripsDao.getActiveTrips();
+  Future<List<Trip>> getActiveTrips() async {
+    try {
+      return await _tripsDao.getActiveTrips();
+    } catch (_) {
+      return [];
+    }
+  }
 
   Future<void> updateTrip(TripsCompanion entry) => _tripsDao.updateTrip(entry);
 

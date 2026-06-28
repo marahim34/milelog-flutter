@@ -310,6 +310,8 @@ class _DriveTabState extends ConsumerState<DriveTab> {
 }
 
 class _Header extends StatelessWidget {
+  const _Header();
+
   @override
   Widget build(BuildContext context) {
     return Padding(

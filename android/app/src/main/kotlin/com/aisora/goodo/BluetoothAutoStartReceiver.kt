@@ -150,7 +150,7 @@ class BluetoothAutoStartReceiver : BroadcastReceiver() {
         // drift_flutter places the DB in getApplicationDocumentsDirectory(),
         // which path_provider_android resolves to <dataDir>/app_flutter/.
         // dataDir = filesDir.parentFile (i.e. /data/user/0/<pkg>/, NOT .../files/).
-        val path = context.filesDir.parentFile!!.absolutePath + "/app_flutter/goodo.sqlite"
+        val path = (context.filesDir.parentFile ?: return null).absolutePath + "/app_flutter/goodo.sqlite"
         SQLiteDatabase.openDatabase(
             path, null,
             SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.NO_LOCALIZED_COLLATORS

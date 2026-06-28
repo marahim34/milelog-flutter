@@ -52,4 +52,6 @@ dependencies {
     // FusedLocationProviderClient used by TrackingService for native GPS.
     // Same version as geolocator_android plugin to avoid classpath conflicts.
     implementation("com.google.android.gms:play-services-location:21.2.0")
+    // EncryptedSharedPreferences for native-only Bluetooth state prefs.
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 }

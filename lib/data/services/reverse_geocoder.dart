@@ -12,7 +12,7 @@ class ReverseGeocoder {
   static Future<String> lookup(double latitude, double longitude) async {
     try {
       final placemarks = await placemarkFromCoordinates(latitude, longitude)
-          .timeout(const Duration(seconds: 5));
+          .timeout(const Duration(seconds: 10));
       if (placemarks.isEmpty) return '';
       final p = placemarks.first;
       final parts = [p.street, p.locality, p.administrativeArea]

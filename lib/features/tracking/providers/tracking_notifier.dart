@@ -187,6 +187,11 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
 
   static const _persistKey = 'active_trip_state';
 
+  // Inactivity thresholds — 50 min warning gives the driver a buffer before
+  // the 60 min auto-stop fires. Must stay in sync with TrackingService.kt.
+  static const _inactivityWarnSeconds = 3000;  // 50 minutes
+  static const _inactivityStopSeconds = 3600;  // 60 minutes
+
   @override
   TrackingViewState build() {
     _locationService = LocationTrackingService();
@@ -394,10 +399,10 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
         // Inactivity detection: no movement >50m in 50min → warning;
         // no movement >50m in 60min → auto-stop and save.
         final secondsStationary = _locationService.secondsSinceLastMovement;
-        if (secondsStationary >= 3600 && !_autoStopped) {
+        if (secondsStationary >= _inactivityStopSeconds && !_autoStopped) {
           _autoStopped = true;
           unawaited(_autoStop());
-        } else if (secondsStationary >= 3000 && !_inactivityWarned) {
+        } else if (secondsStationary >= _inactivityWarnSeconds && !_inactivityWarned) {
           _inactivityWarned = true;
           state = state.copyWith(isInactivityWarning: true);
         }
@@ -517,7 +522,7 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
             latitude: position.latitude,
             longitude: position.longitude,
             address: '', // tracked point will overwrite with geocoded address
-          ),
+          ).catchError((_) {}),
         );
       }
     }
@@ -552,7 +557,7 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
             altitude: Value(point.altitude),
             timestamp: point.timestampMs,
           ),
-        ),
+        ).catchError((_) {}), // best-effort — DB write failure must not crash the tracking loop
       );
 
       // Best-effort, fire-and-forget — so logs_tab.dart's trip cards have a
@@ -561,15 +566,17 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
       if (!_startLocationCaptured) {
         _startLocationCaptured = true;
         unawaited(() async {
-          final address =
-              await ReverseGeocoder.lookup(point.latitude, point.longitude);
-          if (_disposed) return;
-          await repository.updateTripStartLocation(
-            tripId: tripId,
-            latitude: point.latitude,
-            longitude: point.longitude,
-            address: address,
-          );
+          try {
+            final address =
+                await ReverseGeocoder.lookup(point.latitude, point.longitude);
+            if (_disposed) return;
+            await repository.updateTripStartLocation(
+              tripId: tripId,
+              latitude: point.latitude,
+              longitude: point.longitude,
+              address: address,
+            );
+          } catch (_) {} // best-effort — geocode or DB failure must not crash tracking
         }());
       }
     }

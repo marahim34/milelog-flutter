@@ -315,7 +315,7 @@ class TrackingService : Service() {
             // drift_flutter places the DB in getApplicationDocumentsDirectory(),
             // which path_provider_android resolves to <dataDir>/app_flutter/.
             // dataDir = filesDir.parentFile (i.e. /data/user/0/<pkg>/, NOT .../files/).
-            val path = filesDir.parentFile!!.absolutePath + "/app_flutter/goodo.sqlite"
+            val path = (filesDir.parentFile ?: return).absolutePath + "/app_flutter/goodo.sqlite"
             db = SQLiteDatabase.openDatabase(
                 path, null,
                 SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.NO_LOCALIZED_COLLATORS

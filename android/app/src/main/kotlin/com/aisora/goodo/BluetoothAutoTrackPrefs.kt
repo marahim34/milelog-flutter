@@ -8,6 +8,8 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
@@ -37,6 +39,23 @@ object BluetoothAutoTrackPrefs {
     private const val NOTIFICATION_CHANNEL_ID = "bt_auto_track"
     private const val NOTIFICATION_ID = 2001
 
+    /** Returns an EncryptedSharedPreferences for native-only BT state. Falls back to plain prefs on error. */
+    private fun nativePrefs(context: Context) = try {
+        val masterKey = MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        EncryptedSharedPreferences.create(
+            context,
+            NATIVE_PREFS,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+        )
+    } catch (_: Exception) {
+        // Keystore unavailable on this device — fall back to plain prefs.
+        context.getSharedPreferences(NATIVE_PREFS, Context.MODE_PRIVATE)
+    }
+
     /** Called by [BluetoothAclReceiver] for a connect/disconnect that matched a cached vehicle. */
     fun handleAclEvent(context: Context, mac: String, vehicleId: Int, connected: Boolean) {
         // The in-process path (BluetoothAutoTrackingController, via MainActivity's
@@ -44,7 +63,7 @@ object BluetoothAutoTrackPrefs {
         // engine is alive — acting here too would double-write waypoints.
         if (AppProcessState.isEngineAlive) return
 
-        val nativePrefs = context.getSharedPreferences(NATIVE_PREFS, Context.MODE_PRIVATE)
+        val nativePrefs = nativePrefs(context)
         val pendingKey = "stop_pending_$mac"
         val committedKey = "stop_committed_$mac"
 
@@ -91,7 +110,7 @@ object BluetoothAutoTrackPrefs {
         // while the driver is still using the app.
         if (AppProcessState.isEngineAlive) return
 
-        val nativePrefs = context.getSharedPreferences(NATIVE_PREFS, Context.MODE_PRIVATE)
+        val nativePrefs = nativePrefs(context)
         val pendingKey = "stop_pending_$mac"
         if (!nativePrefs.getBoolean(pendingKey, false)) return // a reconnect already cancelled this
         nativePrefs.edit().putBoolean("stop_committed_$mac", true).remove(pendingKey).apply()

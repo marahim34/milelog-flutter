@@ -109,6 +109,11 @@ class MainActivity : FlutterActivity() {
                         result.error("INVALID_ARG", "filename and bytes are required", null)
                         return@setMethodCallHandler
                     }
+                    // Reject path traversal attempts — filename must be a plain name, no slashes or dots sequences.
+                    if (filename.contains('/') || filename.contains('\\') || filename.contains("..")) {
+                        result.error("INVALID_ARG", "filename must not contain path separators", null)
+                        return@setMethodCallHandler
+                    }
                     thread {
                         try {
                             saveToDownloads(filename, bytes)
@@ -129,6 +134,10 @@ class MainActivity : FlutterActivity() {
             when (call.method) {
                 "startTracking" -> {
                     val tripId = call.argument<Int>("tripId") ?: -1
+                    if (tripId < 1) {
+                        result.error("INVALID_ARG", "tripId must be a positive integer", null)
+                        return@setMethodCallHandler
+                    }
                     val startTimeMs = call.argument<Long>("startTimeMs")
                         ?: System.currentTimeMillis()
                     val odometerStart = call.argument<Double>("odometerStart") ?: 0.0

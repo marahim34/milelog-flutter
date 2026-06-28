@@ -59,6 +59,7 @@ class ReportExportService {
 
   Future<void> shareFile(String filename, List<int> bytes) async {
     final tempDir = await getTemporaryDirectory();
+    if (!tempDir.existsSync()) await tempDir.create(recursive: true);
     final file = File('${tempDir.path}/$filename');
     await file.writeAsBytes(bytes, flush: true);
     await Share.shareXFiles([XFile(file.path)], subject: filename);
