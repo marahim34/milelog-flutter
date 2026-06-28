@@ -41,7 +41,7 @@
         android:label="GoOdo"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:enableOnBackInvokedCallback="true">
         <service
             android:name="id.flutter.flutter_background_service.BackgroundService"
