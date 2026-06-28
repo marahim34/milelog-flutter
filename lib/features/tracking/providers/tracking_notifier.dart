@@ -74,6 +74,7 @@ class TrackingViewState {
     required this.startTimeMs,
     required this.tripId,
     required this.isInactivityWarning,
+    this.isAutoStopped = false,
   });
 
   final TrackingStatus status;
@@ -99,6 +100,12 @@ class TrackingViewState {
   /// True when no movement >50m was detected in the last 50 minutes —
   /// the UI shows a "Trip will auto-stop in 10 minutes" warning banner.
   final bool isInactivityWarning;
+
+  /// True only when the trip was stopped by the 60-min inactivity timer,
+  /// not by the user pressing stop. The tracking screen uses this to
+  /// distinguish auto-stop (show the "60 min" snackbar) from manual stop
+  /// (let _handleStop's own snackbar fire instead).
+  final bool isAutoStopped;
 
   factory TrackingViewState.initial() => TrackingViewState(
         status: TrackingStatus.requestingPermission,
@@ -126,6 +133,7 @@ class TrackingViewState {
     int? startTimeMs,
     int? tripId,
     bool? isInactivityWarning,
+    bool? isAutoStopped,
   }) {
     return TrackingViewState(
       status: status ?? this.status,
@@ -139,6 +147,7 @@ class TrackingViewState {
       startTimeMs: startTimeMs ?? this.startTimeMs,
       tripId: tripId ?? this.tripId,
       isInactivityWarning: isInactivityWarning ?? this.isInactivityWarning,
+      isAutoStopped: isAutoStopped ?? this.isAutoStopped,
     );
   }
 }
@@ -223,7 +232,12 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
 
         final vehicle = await vehicleRepository.getByPlate(_vehicleNumber);
         if (_disposed) return;
-        _vehicleOdometer = vehicle?.lastOdometer ?? 0.0;
+        // Prefer the odometer snapshot captured when the trip originally started
+        // over the vehicle's current lastOdometer (which may already include
+        // this trip's distance if OdometerManager ran after the crash).
+        _vehicleOdometer = existingTrip.odometerStart > 0
+            ? existingTrip.odometerStart
+            : (vehicle?.lastOdometer ?? 0.0);
 
         // Use DB-stored distance as the base so the live counter starts
         // from what was already driven, not from zero.
@@ -244,7 +258,10 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
           totalDistanceKm: existingTrip.distanceKm,
         );
 
-        await BackgroundTrackingService.start();
+        await BackgroundTrackingService.start(
+          tripId: resumeTripId,
+          startTimeMs: existingTrip.startTime,
+        );
         if (_disposed) return;
         await _locationService.start();
         if (_disposed) return;
@@ -257,6 +274,48 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
     }
 
     // ── Normal start path ─────────────────────────────────────────────────
+    //
+    // Last-line-of-defense: if a trip is already isActive=true in the DB
+    // (e.g. user navigated away without stopping, which disposed this notifier
+    // and stopped the native service but did NOT finalize the trip), resume it
+    // instead of inserting a second row. This is what prevents the "two trips"
+    // bug where isRunning=false (service stopped by dispose) but the trip is
+    // still open in the DB.
+    final existingActive = await repository.getActiveTrip();
+    if (existingActive != null) {
+      _isResumedTrip = true;
+      _tripType = TripType.fromString(existingActive.tripType);
+      _vehicleNumber = existingActive.vehicleNumber;
+      final existingVehicle =
+          await vehicleRepository.getByPlate(_vehicleNumber);
+      if (_disposed) return;
+      _vehicleOdometer = existingActive.odometerStart > 0
+          ? existingActive.odometerStart
+          : (existingVehicle?.lastOdometer ?? 0.0);
+      _resumeBaseDistance = existingActive.distanceKm;
+      final elapsed =
+          ((DateTime.now().millisecondsSinceEpoch - existingActive.startTime) /
+                  1000)
+              .round();
+      state = state.copyWith(
+        status: TrackingStatus.active,
+        startTimeMs: existingActive.startTime,
+        tripId: existingActive.id,
+        elapsedSeconds: elapsed,
+        totalDistanceKm: existingActive.distanceKm,
+      );
+      await BackgroundTrackingService.start(
+        tripId: existingActive.id,
+        startTimeMs: existingActive.startTime,
+      );
+      if (_disposed) return;
+      await _locationService.start();
+      if (_disposed) return;
+      _startListeners();
+      _startTimers();
+      return;
+    }
+
     final startTimeMs = DateTime.now().millisecondsSinceEpoch;
     final vehicle = args?.vehicleId != null
         ? await vehicleRepository.getById(args!.vehicleId!)
@@ -276,6 +335,7 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
         isActive: const Value(true),
         tripType: Value(_tripType.value),
         vehicleNumber: Value(_vehicleNumber),
+        odometerStart: Value(_vehicleOdometer),
       ),
     );
     if (_disposed) return;
@@ -286,7 +346,11 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
       tripId: tripId,
     );
 
-    await BackgroundTrackingService.start();
+    await BackgroundTrackingService.start(
+      tripId: tripId,
+      startTimeMs: startTimeMs,
+      odometerStart: _vehicleOdometer,
+    );
     if (_disposed) return;
 
     await _locationService.start();
@@ -636,6 +700,7 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
       state = state.copyWith(
         status: TrackingStatus.stopped,
         totalDistanceKm: distanceKm,
+        isAutoStopped: true,
       );
     }
   }
@@ -643,12 +708,12 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
   /// Stops GPS updates and finalizes the trip row created in [_initialize]
   /// via [TripRepository], using the distance recomputed from the full
   /// point list (not the live running total) as the authoritative value.
+  /// Odometer start/end are taken from [_vehicleOdometer] captured at trip
+  /// start — never from caller-supplied values (see CLAUDE.md odometer rule).
   Future<void> stopAndSave({
     required TripType tripType,
     required String companyName,
     required String vehicleNumber,
-    double odometerStart = 0.0,
-    double odometerEnd = 0.0,
     String notes = '',
   }) async {
     _elapsedTimer?.cancel();
@@ -692,8 +757,8 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
           tripType: Value(tripType.value),
           companyName: Value(companyName),
           vehicleNumber: Value(vehicleNumber),
-          odometerStart: Value(odometerStart),
-          odometerEnd: Value(odometerEnd),
+          odometerStart: Value(_vehicleOdometer),
+          odometerEnd: Value(_vehicleOdometer + distanceKm),
           mileageRate: Value(effectiveRate),
           notes: Value(notes),
         ),
@@ -739,8 +804,8 @@ class TrackingNotifier extends AutoDisposeNotifier<TrackingViewState> {
       tripType: tripType,
       companyName: companyName,
       vehicleNumber: vehicleNumber,
-      odometerStart: odometerStart,
-      odometerEnd: odometerEnd,
+      odometerStart: _vehicleOdometer,
+      odometerEnd: _vehicleOdometer + distanceKm,
       mileageRate: effectiveRate,
       notes: notes,
       endLat: lastPoint?.latitude,

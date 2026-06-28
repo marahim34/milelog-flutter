@@ -18,7 +18,6 @@ class AddEditVehicleNotifier
   Future<void> save({
     required String name,
     required String plateNumber,
-    required double defaultMileageRate,
     required double initialOdometer,
     required bool isDefault,
     String? bluetoothMac,
@@ -31,7 +30,6 @@ class AddEditVehicleNotifier
       await repository.addVehicle(
         name: name,
         plateNumber: plateNumber,
-        defaultMileageRate: defaultMileageRate,
         initialOdometer: initialOdometer,
         isDefault: isDefault,
         bluetoothMac: bluetoothMac,
@@ -42,7 +40,6 @@ class AddEditVehicleNotifier
         existing: existing,
         name: name,
         plateNumber: plateNumber,
-        defaultMileageRate: defaultMileageRate,
         initialOdometer: initialOdometer,
         isDefault: isDefault,
         bluetoothMac: bluetoothMac,

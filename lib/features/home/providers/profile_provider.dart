@@ -4,15 +4,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ProfileData {
   const ProfileData({
     this.name = '',
+    this.companyName = '',
     this.address = '',
     this.phone = '',
-    this.email = '',
+    this.email,
   });
 
   final String name;
+  final String companyName;
   final String address;
   final String phone;
-  final String email;
+  // null = no auth session yet; will be set from FirebaseAuth.instance.currentUser?.email
+  final String? email;
 }
 
 class ProfileNotifier extends StateNotifier<ProfileData> {
@@ -21,17 +24,18 @@ class ProfileNotifier extends StateNotifier<ProfileData> {
   }
 
   static const _kName = 'profile_name';
+  static const _kCompanyName = 'profile_company_name';
   static const _kAddress = 'profile_address';
   static const _kPhone = 'profile_phone';
-  static const _kEmail = 'profile_email';
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
     state = ProfileData(
       name: prefs.getString(_kName) ?? '',
+      companyName: prefs.getString(_kCompanyName) ?? '',
       address: prefs.getString(_kAddress) ?? '',
       phone: prefs.getString(_kPhone) ?? '',
-      email: prefs.getString(_kEmail) ?? '',
+      email: null, // TODO: FirebaseAuth.instance.currentUser?.email
     );
   }
 
@@ -39,9 +43,10 @@ class ProfileNotifier extends StateNotifier<ProfileData> {
     state = data;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kName, data.name);
+    await prefs.setString(_kCompanyName, data.companyName);
     await prefs.setString(_kAddress, data.address);
     await prefs.setString(_kPhone, data.phone);
-    await prefs.setString(_kEmail, data.email);
+    // email is not persisted — it comes from the auth session
   }
 }
 

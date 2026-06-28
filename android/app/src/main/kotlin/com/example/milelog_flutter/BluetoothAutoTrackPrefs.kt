@@ -86,10 +86,17 @@ object BluetoothAutoTrackPrefs {
 
     /** Called by [BluetoothMergeWorker] when the 3-minute window elapses with no reconnect. */
     fun commitStop(context: Context, mac: String, vehicleId: Int) {
+        // If the Flutter engine is alive the Dart-side merge timer already handled
+        // the stop — committing here would duplicate the waypoint / stop the service
+        // while the driver is still using the app.
+        if (AppProcessState.isEngineAlive) return
+
         val nativePrefs = context.getSharedPreferences(NATIVE_PREFS, Context.MODE_PRIVATE)
         val pendingKey = "stop_pending_$mac"
         if (!nativePrefs.getBoolean(pendingKey, false)) return // a reconnect already cancelled this
         nativePrefs.edit().putBoolean("stop_committed_$mac", true).remove(pendingKey).apply()
+        // Stop GPS immediately — merge window elapsed with no reconnect.
+        context.stopService(Intent(context, TrackingService::class.java))
         writePendingActionForDart(context, "disconnected_commit", vehicleId, mac)
         wakeService(context)
     }

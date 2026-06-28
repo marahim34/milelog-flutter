@@ -151,19 +151,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
     );
   }
 
-  Future<void> _handleEditProfile() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.of(context).surfaceElevated,
-      shape: const RoundedRectangleBorder(
-        borderRadius:
-            BorderRadius.vertical(top: Radius.circular(AppTheme.cardRadius)),
-      ),
-      isScrollControlled: true,
-      builder: (context) => const _ProfileSheet(),
-    );
-  }
-
   Future<void> _handleEditTheme() async {
     await showModalBottomSheet<void>(
       context: context,
@@ -204,7 +191,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
         ref.watch(bluetoothAutoTrackingEnabledProvider);
     final themeMode = ref.watch(themeModeProvider);
     final palette = ref.watch(paletteProvider);
-    final profile = ref.watch(profileProvider);
 
     return Scaffold(
       body: SafeArea(
@@ -215,6 +201,11 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
           ),
           children: [
             _Header(packageInfo: packageInfo),
+            const _SectionLabel(title: 'PROFILE'),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: AppTheme.space16),
+              child: _ProfileCard(),
+            ),
             if (bluetoothPermission.value == false)
               Padding(
                 padding: const EdgeInsets.fromLTRB(
@@ -230,7 +221,10 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
             const _SectionLabel(title: 'PREFERENCES'),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppTheme.space16),
-              child: _SettingsCard(
+              child: _ExpandableSettingsCard(
+                icon: Icons.tune_outlined,
+                title: 'Preferences',
+                subtitle: 'GPS, Bluetooth, theme & rates',
                 children: [
                   _ToggleRow(
                     icon: Icons.gps_fixed,
@@ -262,7 +256,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                   _SettingRow(
                     icon: Icons.payments_outlined,
                     title: 'Mileage rate',
-                    subtitle: 'Default rate used when a vehicle has none set',
+                    subtitle: 'Applied to all business trips',
                     onTap: _handleEditRate,
                     trailing: Text(
                       rate.when(
@@ -411,45 +405,65 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
             const _SectionLabel(title: 'ODOMETER'),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppTheme.space16),
-              child: _SettingsCard(
-                children: [
-                  vehicles.when(
-                    data: (list) {
-                      final vehicle = _defaultVehicleFrom(list);
-                      if (vehicle == null) {
-                        return const _SettingRow(
+              child: vehicles.when(
+                data: (list) {
+                  final vehicle = _defaultVehicleFrom(list);
+                  return _ExpandableSettingsCard(
+                    icon: Icons.speed_outlined,
+                    title: vehicle?.name ?? 'Odometer',
+                    subtitle: vehicle == null
+                        ? 'Add a vehicle to track its odometer'
+                        : '${NumberFormat('#,##0').format(vehicle.lastOdometer)} km',
+                    children: [
+                      if (vehicle == null)
+                        const _SettingRow(
                           icon: Icons.speed_outlined,
                           title: 'No vehicle set',
-                          subtitle: 'Add a vehicle first to track its odometer',
+                          subtitle:
+                              'Add a vehicle first to track its odometer',
                           isLast: true,
-                        );
-                      }
-                      return _SettingRow(
-                        icon: Icons.speed_outlined,
-                        title: vehicle.name,
-                        subtitle:
-                            '${NumberFormat('#,##0').format(vehicle.lastOdometer)} km '
-                            '· Tap to correct',
-                        trailing:
-                            Icon(Icons.chevron_right, color: colors.textDimmer),
-                        onTap: () => _handleEditOdometer(vehicle),
-                        isLast: true,
-                      );
-                    },
-                    loading: () => const _SettingRow(
+                        )
+                      else
+                        _SettingRow(
+                          icon: Icons.speed_outlined,
+                          title: vehicle.name,
+                          subtitle:
+                              '${NumberFormat('#,##0').format(vehicle.lastOdometer)} km '
+                              '· Tap to correct',
+                          trailing: Icon(Icons.chevron_right,
+                              color: colors.textDimmer),
+                          onTap: () => _handleEditOdometer(vehicle),
+                          isLast: true,
+                        ),
+                    ],
+                  );
+                },
+                loading: () => const _ExpandableSettingsCard(
+                  icon: Icons.speed_outlined,
+                  title: 'Odometer',
+                  subtitle: 'Loading…',
+                  children: [
+                    _SettingRow(
                       icon: Icons.speed_outlined,
                       title: 'Odometer',
                       subtitle: 'Loading…',
                       isLast: true,
                     ),
-                    error: (_, __) => const _SettingRow(
+                  ],
+                ),
+                error: (_, __) => const _ExpandableSettingsCard(
+                  icon: Icons.speed_outlined,
+                  title: 'Odometer',
+                  subtitle: 'Unavailable',
+                  children: [
+                    _SettingRow(
                       icon: Icons.speed_outlined,
                       title: 'Odometer',
                       subtitle: 'Unavailable',
                       isLast: true,
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             const _SectionLabel(title: 'PERMISSIONS'),
@@ -515,25 +529,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                       error: (_, __) => const _StatusChip(
                           label: 'Unknown', tone: _ChipTone.warning),
                     ),
-                  ),
-                ],
-              ),
-            ),
-            const _SectionLabel(title: 'PROFILE'),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppTheme.space16),
-              child: _SettingsCard(
-                children: [
-                  _SettingRow(
-                    icon: Icons.business_outlined,
-                    title: 'Company / Name',
-                    subtitle: profile.name.isEmpty
-                        ? 'Appears on PDF report cover'
-                        : profile.name,
-                    trailing:
-                        Icon(Icons.chevron_right, color: colors.textDimmer),
-                    onTap: _handleEditProfile,
-                    isLast: true,
                   ),
                 ],
               ),
@@ -637,6 +632,87 @@ class _SettingsCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       margin: EdgeInsets.zero,
       child: Column(children: children),
+    );
+  }
+}
+
+class _ExpandableSettingsCard extends StatelessWidget {
+  const _ExpandableSettingsCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.children,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      margin: EdgeInsets.zero,
+      child: ExpansionTile(
+        leading: Icon(icon, color: colors.accent, size: 22),
+        title: Text(title, style: Theme.of(context).textTheme.bodyMedium),
+        subtitle: Text(
+          subtitle,
+          style: Theme.of(context)
+              .textTheme
+              .bodySmall
+              ?.copyWith(color: colors.textDim),
+        ),
+        tilePadding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.space16,
+          vertical: AppTheme.space4,
+        ),
+        childrenPadding: EdgeInsets.zero,
+        children: children,
+      ),
+    );
+  }
+}
+
+class _ReadOnlyEmailField extends StatelessWidget {
+  const _ReadOnlyEmailField({this.email});
+
+  final String? email;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    final hasEmail = email != null && email!.isNotEmpty;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.space16,
+        vertical: AppTheme.space14,
+      ),
+      decoration: BoxDecoration(
+        color: colors.surfaceElevated,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colors.border),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.lock_outline, size: 18, color: colors.textDimmer),
+          const SizedBox(width: AppTheme.space8),
+          Expanded(
+            child: hasEmail
+                ? Text(email!, style: Theme.of(context).textTheme.bodyMedium)
+                : Text(
+                    'Will be filled from your account when login is implemented',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colors.textDimmer,
+                          fontStyle: FontStyle.italic,
+                        ),
+                  ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1105,9 +1181,8 @@ class _RateEditorSheetState extends ConsumerState<_RateEditorSheet> {
           ),
           const SizedBox(height: AppTheme.space18),
           Text(
-            'Used when a vehicle has no rate of its own set in its profile. '
-            'Applies to business trips only — personal trips are never '
-            'reimbursed.',
+            'Applied to all business trips as the reimbursement rate. '
+            'Personal trips are never reimbursed.',
             style: Theme.of(context)
                 .textTheme
                 .bodySmall
@@ -1364,128 +1439,151 @@ class _PaletteSheet extends ConsumerWidget {
   }
 }
 
-class _ProfileSheet extends ConsumerStatefulWidget {
-  const _ProfileSheet();
+class _ProfileCard extends ConsumerStatefulWidget {
+  const _ProfileCard();
 
   @override
-  ConsumerState<_ProfileSheet> createState() => _ProfileSheetState();
+  ConsumerState<_ProfileCard> createState() => _ProfileCardState();
 }
 
-class _ProfileSheetState extends ConsumerState<_ProfileSheet> {
+class _ProfileCardState extends ConsumerState<_ProfileCard> {
   late final TextEditingController _nameCtrl;
+  late final TextEditingController _companyCtrl;
   late final TextEditingController _addressCtrl;
   late final TextEditingController _phoneCtrl;
-  late final TextEditingController _emailCtrl;
 
   @override
   void initState() {
     super.initState();
     final profile = ref.read(profileProvider);
     _nameCtrl = TextEditingController(text: profile.name);
+    _companyCtrl = TextEditingController(text: profile.companyName);
     _addressCtrl = TextEditingController(text: profile.address);
     _phoneCtrl = TextEditingController(text: profile.phone);
-    _emailCtrl = TextEditingController(text: profile.email);
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
+    _companyCtrl.dispose();
     _addressCtrl.dispose();
     _phoneCtrl.dispose();
-    _emailCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
+    final current = ref.read(profileProvider);
     await ref.read(profileProvider.notifier).update(
           ProfileData(
             name: _nameCtrl.text.trim(),
+            companyName: _companyCtrl.text.trim(),
             address: _addressCtrl.text.trim(),
             phone: _phoneCtrl.text.trim(),
-            email: _emailCtrl.text.trim(),
+            email: current.email,
           ),
         );
-    if (mounted) Navigator.of(context).pop();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Profile saved')),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        AppTheme.space20,
-        AppTheme.space20,
-        AppTheme.space20,
-        AppTheme.space20 + MediaQuery.of(context).viewInsets.bottom,
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Profile', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: AppTheme.space4),
-            Text(
-              'Used on the PDF report cover page',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: AppColors.of(context).textDim),
-            ),
-            const SizedBox(height: AppTheme.space18),
-            TextField(
-              controller: _nameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Company / Full name',
-              ),
-              textInputAction: TextInputAction.next,
-            ),
-            const SizedBox(height: AppTheme.space14),
-            TextField(
-              controller: _addressCtrl,
-              decoration: const InputDecoration(labelText: 'Address'),
-              textInputAction: TextInputAction.next,
-            ),
-            const SizedBox(height: AppTheme.space14),
-            TextField(
-              controller: _phoneCtrl,
-              decoration: const InputDecoration(labelText: 'Phone'),
-              keyboardType: TextInputType.phone,
-              textInputAction: TextInputAction.next,
-            ),
-            const SizedBox(height: AppTheme.space14),
-            TextField(
-              controller: _emailCtrl,
-              decoration: const InputDecoration(labelText: 'Email'),
-              keyboardType: TextInputType.emailAddress,
-              textInputAction: TextInputAction.done,
-              onSubmitted: (_) => _save(),
-            ),
-            const SizedBox(height: AppTheme.space20),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: AppTheme.space14),
-                      side: BorderSide(
-                          color: AppColors.of(context).border),
-                    ),
-                    child: const Text('Cancel'),
-                  ),
-                ),
-                const SizedBox(width: AppTheme.space10),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: _save,
-                    child: const Text('Save'),
-                  ),
-                ),
-              ],
-            ),
-          ],
+    final profile = ref.watch(profileProvider);
+    final colors = AppColors.of(context);
+    final collapsedSubtitle = [
+      profile.name,
+      profile.companyName,
+    ].where((s) => s.isNotEmpty).join(' · ');
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      margin: EdgeInsets.zero,
+      child: ExpansionTile(
+        leading: CircleAvatar(
+          radius: 18,
+          backgroundColor: colors.accent.withValues(alpha: 0.18),
+          child: Icon(Icons.person_outline, color: colors.accent, size: 20),
         ),
+        title: Text(
+          profile.name.isNotEmpty ? profile.name : 'Profile',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        subtitle: collapsedSubtitle.isNotEmpty
+            ? Text(
+                collapsedSubtitle,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: colors.textDim),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              )
+            : Text(
+                'Tap to set name and company',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: colors.textDimmer),
+              ),
+        tilePadding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.space16,
+          vertical: AppTheme.space4,
+        ),
+        childrenPadding: const EdgeInsets.all(AppTheme.space16),
+        children: [
+          Text(
+            'Used on the PDF report cover page',
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: colors.textDim),
+          ),
+          const SizedBox(height: AppTheme.space16),
+          TextField(
+            controller: _nameCtrl,
+            decoration: const InputDecoration(labelText: 'Full name'),
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: AppTheme.space16),
+          TextField(
+            controller: _companyCtrl,
+            decoration: const InputDecoration(labelText: 'Company name'),
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: AppTheme.space16),
+          TextField(
+            controller: _addressCtrl,
+            decoration: const InputDecoration(labelText: 'Address'),
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: AppTheme.space16),
+          TextField(
+            controller: _phoneCtrl,
+            decoration: const InputDecoration(labelText: 'Phone'),
+            keyboardType: TextInputType.phone,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _save(),
+          ),
+          const SizedBox(height: AppTheme.space16),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Email',
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+          ),
+          const SizedBox(height: AppTheme.space8),
+          _ReadOnlyEmailField(email: profile.email),
+          const SizedBox(height: AppTheme.space16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _save,
+              child: const Text('Save Profile'),
+            ),
+          ),
+        ],
       ),
     );
   }

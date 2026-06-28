@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -9,9 +10,11 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/milelog_logo.dart';
 import '../../../data/database/app_database.dart';
 import '../../../data/models/trip_type.dart';
 import '../../../data/providers/database_provider.dart';
+import '../../tracking/providers/tracking_notifier.dart';
 import '../../tracking/start_trip_sheet.dart';
 import '../home_screen.dart';
 import '../providers/completed_trips_provider.dart';
@@ -35,10 +38,19 @@ class _DriveTabState extends ConsumerState<DriveTab> {
   // null = still checking, true = ok, false = needs fixing
   bool? _batteryOptimizationOk;
 
+  // Non-null when a trip is currently running in the background service.
+  int? _activeTripId;
+  double _activeTripDistance = 0.0;
+  bool _autoNavigated = false;
+
+  static const _trackingChannel =
+      MethodChannel('com.example.milelog_flutter/tracking');
+
   @override
   void initState() {
     super.initState();
     _checkBatteryOptimization();
+    _checkActiveTripState();
   }
 
   Future<void> _checkBatteryOptimization() async {
@@ -57,7 +69,131 @@ class _DriveTabState extends ConsumerState<DriveTab> {
     await _checkBatteryOptimization();
   }
 
+  // Checks whether a trip is currently running, either from a notification tap
+  // or because the app was relaunched mid-trip. Navigates to the tracking
+  // screen automatically and shows the in-progress banner.
+  //
+  // Uses the DB as the source of truth — native service state is unreliable
+  // because TrackingNotifier.dispose() stops the service without finalizing
+  // the trip, so isRunning=false does not mean no active trip exists.
+  Future<void> _checkActiveTripState() async {
+    // Notification tap: MainActivity stored the tripId — pick it up first.
+    final notifTripId = await _consumePendingTrackingNavigation();
+    if (notifTripId != null && mounted) {
+      _navigateToTracking(notifTripId);
+      return;
+    }
+
+    // DB is the authoritative source for active trips.
+    final activeTrip = await ref.read(tripsDaoProvider).getActiveTrip();
+    if (activeTrip == null) return;
+
+    if (!mounted) return;
+    setState(() {
+      _activeTripId = activeTrip.id;
+      _activeTripDistance = activeTrip.distanceKm;
+    });
+    _navigateToTracking(activeTrip.id);
+  }
+
+  Future<int?> _consumePendingTrackingNavigation() async {
+    if (!Platform.isAndroid) return null;
+    try {
+      final id = await _trackingChannel
+          .invokeMethod<int?>('consumePendingNavigateToTracking');
+      return id;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _navigateToTracking(int tripId) {
+    if (!mounted || _autoNavigated) return;
+    _autoNavigated = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      PendingTrackingArgs.value =
+          TrackingScreenArgs(tripType: TripType.business, resumeTripId: tripId);
+      context.push(
+        AppRoutes.tracking,
+        extra: TrackingScreenArgs(tripType: TripType.business, resumeTripId: tripId),
+      );
+    });
+  }
+
   Future<void> _handleStartTrip() async {
+    // Block if the DB already has an active trip — checking the DB rather than
+    // the native service state because TrackingNotifier.dispose() stops the
+    // service (isRunning=false) without finalizing the trip (isActive stays true).
+    final activeTrip = await ref.read(tripsDaoProvider).getActiveTrip();
+    if (activeTrip != null) {
+      if (mounted) {
+        setState(() {
+          _activeTripId = activeTrip.id;
+          _activeTripDistance = activeTrip.distanceKm;
+        });
+      }
+      return;
+    }
+
+    final vehiclesDao = ref.read(vehiclesDaoProvider);
+    final vehicle = await vehiclesDao.getDefault();
+
+    if (!mounted) return;
+    if (vehicle == null) {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Vehicle Required'),
+          content: const Text(
+            'Please add a vehicle with odometer reading before starting a trip.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                context.push(AppRoutes.vehicleNew);
+              },
+              child: const Text('Add Vehicle'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    if (vehicle.initialOdometer <= 0) {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Odometer Required'),
+          content: const Text(
+            'Please set your vehicle odometer reading first.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                context.push(AppRoutes.vehicleEditPath(vehicle.id));
+              },
+              child: const Text('Set Odometer'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
     final args = await showModalBottomSheet<TrackingScreenArgs>(
       context: context,
       backgroundColor: AppColors.of(context).surfaceElevated,
@@ -127,7 +263,12 @@ class _DriveTabState extends ConsumerState<DriveTab> {
                     AppTheme.space16,
                     0,
                   ),
-                  child: _StartTripButton(onTap: _handleStartTrip),
+                  child: _activeTripId != null
+                      ? _ActiveTripBanner(
+                          distanceKm: _activeTripDistance,
+                          onResume: () => _navigateToTracking(_activeTripId!),
+                        )
+                      : _StartTripButton(onTap: _handleStartTrip),
                 ),
                 _SectionLabel(
                   title: 'RECENT TRIPS',
@@ -180,6 +321,8 @@ class _Header extends StatelessWidget {
       ),
       child: Row(
         children: [
+          const MileLogLogo(size: 32),
+          const SizedBox(width: 10),
           Text(
             _greeting().toUpperCase(),
             style: Theme.of(context).textTheme.labelSmall,
@@ -807,6 +950,80 @@ class _DashedLinePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _DashedLinePainter oldDelegate) =>
       oldDelegate.color != color;
+}
+
+/// Shown when a trip is already running in the background service.
+/// Prevents starting a second trip and provides a one-tap resume path.
+class _ActiveTripBanner extends StatelessWidget {
+  const _ActiveTripBanner({required this.distanceKm, required this.onResume});
+
+  final double distanceKm;
+  final VoidCallback onResume;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: colors.accentTint,
+        border: Border.all(color: colors.accent.withValues(alpha: 0.4)),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      padding: const EdgeInsets.all(AppTheme.space16),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: colors.accent.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(Icons.fiber_manual_record,
+                color: colors.accent, size: 22),
+          ),
+          const SizedBox(width: AppTheme.space14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Trip in progress',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: colors.accent,
+                      ),
+                ),
+                const SizedBox(height: AppTheme.space4),
+                Text(
+                  '${distanceKm.toStringAsFixed(1)} km recorded',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: colors.textDim),
+                ),
+              ],
+            ),
+          ),
+          ElevatedButton(
+            onPressed: onResume,
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.space16, vertical: AppTheme.space10),
+            ),
+            child: Text(
+              'Resume',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colors.accentInk,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Shown on Android when the app has not been excluded from battery

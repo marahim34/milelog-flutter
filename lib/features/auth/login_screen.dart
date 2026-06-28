@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/router/app_router.dart';
+import '../../core/widgets/milelog_logo.dart';
 import '../../data/services/session_service.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -24,6 +25,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
+  // TODO: Replace with Firebase Auth when implemented
+  // Email from login will be passed to ProfileProvider
   Future<void> _handleLogin() async {
     if (_formKey.currentState?.validate() ?? false) {
       // Firebase auth will go here
@@ -46,10 +49,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Icon(
-                    Icons.local_shipping_rounded,
-                    size: 80,
-                    color: Theme.of(context).colorScheme.primary,
+                  const Opacity(
+                    opacity: 0.82,
+                    child: MileLogLogo(size: 80),
                   ),
                   const SizedBox(height: 16),
                   Text(

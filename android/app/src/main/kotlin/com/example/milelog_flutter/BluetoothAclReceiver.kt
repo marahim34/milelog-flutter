@@ -1,9 +1,14 @@
 package com.example.milelog_flutter
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Build
+import androidx.core.app.NotificationCompat
 import org.json.JSONObject
 
 /**
@@ -22,12 +27,43 @@ import org.json.JSONObject
 class BluetoothAclReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
-            BluetoothDevice.ACTION_ACL_CONNECTED, BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
+            BluetoothDevice.ACTION_ACL_CONNECTED -> {
+                val device: BluetoothDevice? = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                val mac = device?.address ?: return
+                val vehicleId = lookupVehicleId(context, mac)
+
+                if (vehicleId == null) {
+                    // MAC not in paired-vehicle cache. Only alert if no vehicles exist at all.
+                    if (queryVehicleCount(context) == 0) {
+                        showAlertNotification(
+                            context,
+                            title = "MileLog — Vehicle Required",
+                            content = "Bluetooth connected but no vehicle registered. " +
+                                "Open MileLog to add your vehicle.",
+                            openVehicles = true,
+                        )
+                    }
+                    return
+                }
+
+                val odometer = queryInitialOdometer(context, vehicleId)
+                if (odometer <= 0.0) {
+                    showAlertNotification(
+                        context,
+                        title = "MileLog — Odometer Required",
+                        content = "Please set your vehicle's odometer reading before tracking can start.",
+                        openVehicles = true,
+                    )
+                    return
+                }
+
+                BluetoothAutoTrackPrefs.handleAclEvent(context, mac, vehicleId, connected = true)
+            }
+            BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
                 val device: BluetoothDevice? = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
                 val mac = device?.address ?: return
                 val vehicleId = lookupVehicleId(context, mac) ?: return
-                val connected = intent.action == BluetoothDevice.ACTION_ACL_CONNECTED
-                BluetoothAutoTrackPrefs.handleAclEvent(context, mac, vehicleId, connected)
+                BluetoothAutoTrackPrefs.handleAclEvent(context, mac, vehicleId, connected = false)
             }
             else -> return // includes BOOT_COMPLETED — see class doc.
         }
@@ -49,5 +85,92 @@ class BluetoothAclReceiver : BroadcastReceiver() {
         } catch (_: Exception) {
             null
         }
+    }
+
+    /** Returns total number of vehicles in the Drift SQLite database. */
+    private fun queryVehicleCount(context: Context): Int {
+        val dir = context.filesDir.parentFile ?: return 0
+        val dbPath = dir.absolutePath + "/app_flutter/milelog.sqlite"
+        return try {
+            android.database.sqlite.SQLiteDatabase.openDatabase(
+                dbPath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
+            ).use { db ->
+                db.rawQuery("SELECT COUNT(*) FROM vehicles", null).use { c ->
+                    if (c.moveToFirst()) c.getInt(0) else 0
+                }
+            }
+        } catch (_: Exception) {
+            0
+        }
+    }
+
+    /** Returns `initialOdometer` for the given vehicle id, or 0.0 on any error. */
+    private fun queryInitialOdometer(context: Context, vehicleId: Int): Double {
+        val dir = context.filesDir.parentFile ?: return 0.0
+        val dbPath = dir.absolutePath + "/app_flutter/milelog.sqlite"
+        return try {
+            android.database.sqlite.SQLiteDatabase.openDatabase(
+                dbPath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
+            ).use { db ->
+                db.rawQuery(
+                    "SELECT initial_odometer FROM vehicles WHERE id = ?",
+                    arrayOf(vehicleId.toString())
+                ).use { c ->
+                    if (c.moveToFirst()) c.getDouble(0) else 0.0
+                }
+            }
+        } catch (_: Exception) {
+            0.0
+        }
+    }
+
+    private fun showAlertNotification(
+        context: Context,
+        title: String,
+        content: String,
+        openVehicles: Boolean,
+    ) {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            ?: return
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                ALERT_CHANNEL_ID,
+                "MileLog Alerts",
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply { enableVibration(true) }
+            nm.createNotificationChannel(channel)
+        }
+
+        val launchIntent = context.packageManager
+            .getLaunchIntentForPackage(context.packageName)
+            ?.apply {
+                if (openVehicles) putExtra(EXTRA_OPEN_VEHICLES, true)
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+
+        val piFlags = PendingIntent.FLAG_UPDATE_CURRENT or
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+        val pendingIntent = PendingIntent.getActivity(
+            context, ALERT_NOTIFICATION_ID, launchIntent ?: Intent(), piFlags)
+
+        val notification = NotificationCompat.Builder(context, ALERT_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle(title)
+            .setContentText(content)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(content))
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+
+        nm.notify(ALERT_NOTIFICATION_ID, notification)
+    }
+
+    companion object {
+        private const val ALERT_CHANNEL_ID = "milelog_alerts"
+        private const val ALERT_NOTIFICATION_ID = 9002
+        const val EXTRA_OPEN_VEHICLES = "open_vehicles"
     }
 }

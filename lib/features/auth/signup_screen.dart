@@ -29,7 +29,6 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     if (_formKey.currentState?.validate() ?? false) {
       final name = _nameController.text.trim();
       final email = _emailController.text.trim();
-      final password = _passwordController.text.trim();
       // Firebase auth will go here
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Signup: $name, $email')),

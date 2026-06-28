@@ -1,12 +1,18 @@
+import 'dart:async';
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../core/router/app_router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/database/app_database.dart';
 import '../../data/models/trip_type.dart';
+import '../../data/services/background_tracking_service.dart';
 import '../trips/widgets/trip_detail_editor_sheet.dart';
 import '../vehicles/providers/vehicles_list_provider.dart';
 import 'providers/tracking_notifier.dart';
@@ -26,9 +32,8 @@ class TrackingScreen extends ConsumerStatefulWidget {
 class _TrackingScreenState extends ConsumerState<TrackingScreen> {
   final MapController _mapController = MapController();
   LatLng? _lastCenteredPosition;
-  // Flips to true only right before the deliberate pop after a save (or
-  // save error) completes, so PopScope lets that single pop through.
-  bool _readyToPop = false;
+  StreamSubscription<bool>? _nativePauseSub;
+  bool _didSyncPauseState = false;
 
   @override
   void initState() {
@@ -39,12 +44,38 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
     if (widget.args != null) {
       PendingTrackingArgs.value = widget.args;
     }
+    // Receive real-time pause/resume events from notification buttons while
+    // this screen is mounted (e.g. user pulls down shade while on this screen).
+    _nativePauseSub =
+        TrackingStateBridge.pauseChanged.stream.listen(_onNativePauseChanged);
   }
 
   @override
   void dispose() {
+    _nativePauseSub?.cancel();
     _mapController.dispose();
     super.dispose();
+  }
+
+  void _onNativePauseChanged(bool isPaused) {
+    if (!mounted) return;
+    final notifier = ref.read(trackingNotifierProvider.notifier);
+    if (isPaused) {
+      notifier.pause();
+    } else {
+      notifier.resume();
+    }
+  }
+
+  // Called once after the notifier reaches TrackingStatus.tracking so we can
+  // sync any pause that happened via the notification while this screen wasn't
+  // mounted (e.g. user paused, then re-opened the app).
+  Future<void> _syncNativePauseState() async {
+    if (!Platform.isAndroid || !mounted) return;
+    final isPaused = await BackgroundTrackingService.isNativePaused();
+    if (mounted && isPaused) {
+      ref.read(trackingNotifierProvider.notifier).pause();
+    }
   }
 
   void _maybeRecenter(LatLng? position) {
@@ -84,14 +115,9 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
       builder: (context) => TripDetailEditorSheet(
         initialTripType: widget.args?.tripType ?? TripType.business,
         initialCompanyName: '',
-        initialOdometerStart: selectedVehicle?.lastOdometer ?? 0,
-        initialOdometerEnd: selectedVehicle != null
-            ? selectedVehicle.lastOdometer + liveDistanceKm
-            : 0,
         initialNotes: '',
         saveLabel: 'Save trip',
         gpsDistanceKm: liveDistanceKm,
-        lastOdometerReading: selectedVehicle?.lastOdometer,
         recap: TripRecapData(
           dateLabel: DateFormat('MMM d, y').format(startTime),
           timeWindowLabel: '${DateFormat('h:mm a').format(startTime)} – '
@@ -109,14 +135,13 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
         tripType: result.tripType,
         companyName: result.companyName,
         vehicleNumber: selectedVehicle?.plateNumber ?? '',
-        odometerStart: result.odometerStart,
-        odometerEnd: result.odometerEnd,
         notes: result.notes,
       );
       final distanceKm = ref.read(trackingNotifierProvider).totalDistanceKm;
       final elapsedSeconds = ref.read(trackingNotifierProvider).elapsedSeconds;
 
       if (mounted) {
+        context.go(AppRoutes.home);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -126,19 +151,16 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
             duration: const Duration(seconds: 2),
           ),
         );
-        setState(() => _readyToPop = true);
-        Navigator.of(context).pop();
       }
     } catch (e) {
       if (mounted) {
+        context.go(AppRoutes.home);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error saving trip: $e'),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
-        setState(() => _readyToPop = true);
-        Navigator.of(context).pop();
       }
     }
   }
@@ -176,19 +198,19 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
 
     ref.listen(trackingNotifierProvider, (previous, next) {
       _maybeRecenter(next.currentPosition);
-      // Auto-stop: trip was finalized by the inactivity timer — pop the screen.
+      // Auto-stop only: trip finalized by inactivity timer, NOT manual stop.
+      // Manual stop is handled by _handleStop() which navigates itself.
       if (previous?.status != TrackingStatus.stopped &&
           next.status == TrackingStatus.stopped &&
-          !_readyToPop) {
+          next.isAutoStopped) {
         if (mounted) {
+          context.go(AppRoutes.home);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Trip auto-saved — no movement for 60 minutes'),
               duration: Duration(seconds: 3),
             ),
           );
-          setState(() => _readyToPop = true);
-          Navigator.of(context).pop();
         }
       }
     });
@@ -197,6 +219,14 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
+    }
+
+    // Once the notifier has finished initializing and is actively tracking,
+    // sync the native pause state exactly once so UI reflects any pause that
+    // happened via the notification while this screen wasn't mounted.
+    if (!_didSyncPauseState && trackingState.status == TrackingStatus.active) {
+      _didSyncPauseState = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _syncNativePauseState());
     }
 
     if (trackingState.status == TrackingStatus.permissionDenied ||
@@ -221,9 +251,16 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
     }
 
     return PopScope(
-      canPop: _readyToPop,
+      canPop: false,
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) _handleStop();
+        if (!didPop) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Trip is running in background'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
       },
       child: Scaffold(
         backgroundColor: colors.background,
@@ -299,6 +336,19 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                           ],
                         ),
                     ],
+                  ),
+                  Positioned(
+                    bottom: 4,
+                    right: 4,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 2),
+                      color: Colors.white.withValues(alpha: 0.7),
+                      child: const Text(
+                        '© OpenStreetMap',
+                        style: TextStyle(fontSize: 10, color: Colors.black87),
+                      ),
+                    ),
                   ),
                   if (isInactivityWarning)
                     Positioned(

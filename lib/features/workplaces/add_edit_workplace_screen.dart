@@ -184,133 +184,130 @@ class _WorkplaceFormState extends State<_WorkplaceForm> {
     final colors = AppColors.of(context);
     return SafeArea(
       bottom: false,
-      child: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(
-          AppTheme.space20,
-          AppTheme.space20,
-          AppTheme.space20,
-          AppTheme.space20 + MediaQuery.of(context).padding.bottom,
-        ),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const _SectionLabel('DETAILS'),
+      child: Form(
+        key: _formKey,
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(
+            AppTheme.space16,
+            AppTheme.space16,
+            AppTheme.space16,
+            AppTheme.space16 + MediaQuery.of(context).padding.bottom,
+          ),
+          children: [
+            const _SectionLabel('DETAILS'),
+            const SizedBox(height: AppTheme.space8),
+            TextFormField(
+              controller: _nameController,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(
+                labelText: 'Name',
+                prefixIcon: Icon(Icons.business_outlined),
+              ),
+              validator: _requiredValidator,
+            ),
+            const SizedBox(height: AppTheme.space16),
+            TextFormField(
+              controller: _addressController,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(
+                labelText: 'Address',
+                prefixIcon: Icon(Icons.location_on_outlined),
+              ),
+              validator: _requiredValidator,
+            ),
+            const SizedBox(height: AppTheme.space24),
+            const _SectionLabel('COORDINATES'),
+            const SizedBox(height: AppTheme.space8),
+            OutlinedButton.icon(
+              onPressed: _isLocating ? null : _handleUseCurrentLocation,
+              icon: _isLocating
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: colors.accent,
+                      ),
+                    )
+                  : const Icon(Icons.my_location),
+              label: Text(_isLocating ? 'Locating…' : 'Use my current location'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: AppTheme.space14),
+                side: BorderSide(color: colors.border),
+              ),
+            ),
+            if (_locationError != null) ...[
               const SizedBox(height: AppTheme.space8),
-              TextFormField(
-                controller: _nameController,
-                textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(
-                  labelText: 'Name',
-                  prefixIcon: Icon(Icons.business_outlined),
-                ),
-                validator: _requiredValidator,
-              ),
-              const SizedBox(height: AppTheme.space16),
-              TextFormField(
-                controller: _addressController,
-                textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(
-                  labelText: 'Address',
-                  prefixIcon: Icon(Icons.location_on_outlined),
-                ),
-                validator: _requiredValidator,
-              ),
-              const SizedBox(height: AppTheme.space20),
-              const _SectionLabel('COORDINATES'),
-              const SizedBox(height: AppTheme.space8),
-              OutlinedButton.icon(
-                onPressed: _isLocating ? null : _handleUseCurrentLocation,
-                icon: _isLocating
-                    ? SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: colors.accent,
-                        ),
-                      )
-                    : const Icon(Icons.my_location),
-                label: Text(_isLocating ? 'Locating…' : 'Use my current location'),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: AppTheme.space14),
-                  side: BorderSide(color: colors.border),
-                ),
-              ),
-              if (_locationError != null) ...[
-                const SizedBox(height: AppTheme.space8),
-                Text(
-                  _locationError!,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: colors.danger),
-                ),
-              ],
-              const SizedBox(height: AppTheme.space16),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _latitudeController,
-                      textInputAction: TextInputAction.next,
-                      keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true, signed: true),
-                      decoration: const InputDecoration(labelText: 'Latitude'),
-                      validator: _numberValidator,
-                    ),
-                  ),
-                  const SizedBox(width: AppTheme.space16),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _longitudeController,
-                      textInputAction: TextInputAction.next,
-                      keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true, signed: true),
-                      decoration: const InputDecoration(labelText: 'Longitude'),
-                      validator: _numberValidator,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppTheme.space20),
-              const _SectionLabel('GEOFENCE'),
-              const SizedBox(height: AppTheme.space8),
-              TextFormField(
-                controller: _radiusController,
-                textInputAction: TextInputAction.done,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'Geofence radius (m)',
-                  prefixIcon: Icon(Icons.radar),
-                ),
-                validator: _numberValidator,
-              ),
-              const SizedBox(height: AppTheme.space16),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Set as home'),
-                value: _isHome,
-                onChanged: (value) => setState(() => _isHome = value),
-              ),
-              const SizedBox(height: AppTheme.space24),
-              ElevatedButton(
-                onPressed: _isSaving ? null : _handleSave,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: AppTheme.space4),
-                  child: _isSaving
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Save'),
-                ),
+              Text(
+                _locationError!,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: colors.danger),
               ),
             ],
-          ),
+            const SizedBox(height: AppTheme.space16),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _latitudeController,
+                    textInputAction: TextInputAction.next,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true, signed: true),
+                    decoration: const InputDecoration(labelText: 'Latitude'),
+                    validator: _numberValidator,
+                  ),
+                ),
+                const SizedBox(width: AppTheme.space16),
+                Expanded(
+                  child: TextFormField(
+                    controller: _longitudeController,
+                    textInputAction: TextInputAction.next,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true, signed: true),
+                    decoration: const InputDecoration(labelText: 'Longitude'),
+                    validator: _numberValidator,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppTheme.space24),
+            const _SectionLabel('GEOFENCE'),
+            const SizedBox(height: AppTheme.space8),
+            TextFormField(
+              controller: _radiusController,
+              textInputAction: TextInputAction.done,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Geofence radius (m)',
+                prefixIcon: Icon(Icons.radar),
+              ),
+              validator: _numberValidator,
+            ),
+            const SizedBox(height: AppTheme.space16),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Set as home'),
+              value: _isHome,
+              onChanged: (value) => setState(() => _isHome = value),
+            ),
+            const SizedBox(height: AppTheme.space24),
+            ElevatedButton(
+              onPressed: _isSaving ? null : _handleSave,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppTheme.space4),
+                child: _isSaving
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Save'),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -324,13 +321,12 @@ class _SectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = AppColors.of(context);
     return Text(
       title,
       style: Theme.of(context)
           .textTheme
-          .labelSmall
-          ?.copyWith(color: colors.textDimmer, letterSpacing: 1.2),
+          .labelLarge
+          ?.copyWith(letterSpacing: 1.2),
     );
   }
 }

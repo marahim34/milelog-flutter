@@ -43,6 +43,7 @@ dependencies:
   share_plus: ^10.1.2
 
   # ── Utilities ─────────────────────────────────────────────────────────────
+  url_launcher: ^6.2.0
   path_provider: ^2.1.4
   shared_preferences: ^2.3.2
   google_fonts: ^6.2.1

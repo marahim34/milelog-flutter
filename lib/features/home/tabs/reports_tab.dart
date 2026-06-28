@@ -25,6 +25,11 @@ final selectedReportPeriodProvider =
 /// "previous month" chip.
 final selectedDateRangeProvider = StateProvider<DateTimeRange?>((ref) => null);
 
+enum TripTypeFilter { all, business, personal }
+
+final selectedTripTypeFilterProvider =
+    StateProvider<TripTypeFilter>((ref) => TripTypeFilter.all);
+
 /// The last [count] full calendar months, most recent first, excluding the
 /// current month (already covered by "This month") — feeds the "Previous
 /// months" quick selector.
@@ -120,6 +125,8 @@ class _ReportsTabState extends ConsumerState<ReportsTab> {
     List<Trip> trips,
     String periodLabel,
     String currency,
+    String reportTitle,
+    TripTypeFilter typeFilter,
   ) async {
     if (trips.isEmpty) return;
     final action = await showDialog<String>(
@@ -145,20 +152,37 @@ class _ReportsTabState extends ConsumerState<ReportsTab> {
       final waypointResults = await Future.wait(
         trips.map((t) => repo.getWaypointsForTrip(t.id)),
       );
+      final locationResults = await Future.wait(
+        trips.map((t) => repo.getLocationPointsForTrip(t.id)),
+      );
       final waypointsMap = {
         for (var i = 0; i < trips.length; i++) trips[i].id: waypointResults[i],
       };
+      final locationMap = {
+        for (var i = 0; i < trips.length; i++)
+          trips[i].id: locationResults[i],
+      };
       if (!mounted) return;
       final profile = ref.read(profileProvider);
+      final filterType = switch (typeFilter) {
+        TripTypeFilter.all => 'all',
+        TripTypeFilter.business => 'business',
+        TripTypeFilter.personal => 'personal',
+      };
       final result = await _exportService.generatePdf(
         trips: trips,
         periodLabel: periodLabel,
+        reportTitle: reportTitle,
         currency: currency,
+        filterType: filterType,
         waypoints: waypointsMap,
-        profileName: profile.name,
+        locationPoints: locationMap,
+        profileName: profile.companyName.isNotEmpty
+            ? profile.companyName
+            : profile.name,
         profileAddress: profile.address,
         profilePhone: profile.phone,
-        profileEmail: profile.email,
+        profileEmail: profile.email ?? '',
       );
       if (!mounted) return;
       if (action == 'download') {
@@ -256,6 +280,23 @@ class _ReportsTabState extends ConsumerState<ReportsTab> {
     }
   }
 
+  List<Trip> _filterTripsByType(List<Trip> trips, TripTypeFilter filter) {
+    switch (filter) {
+      case TripTypeFilter.all:
+        return trips;
+      case TripTypeFilter.business:
+        return trips
+            .where((t) =>
+                TripType.fromString(t.tripType) == TripType.business)
+            .toList();
+      case TripTypeFilter.personal:
+        return trips
+            .where((t) =>
+                TripType.fromString(t.tripType) == TripType.personal)
+            .toList();
+    }
+  }
+
   String _periodLabel(
     ReportPeriod period,
     List<Trip> allTrips,
@@ -267,7 +308,7 @@ class _ReportsTabState extends ConsumerState<ReportsTab> {
       case ReportPeriod.custom:
         if (range == null) return 'CUSTOM PERIOD';
         final fmt = DateFormat('MMM d, y');
-        return '${fmt.format(range.start)} – ${fmt.format(range.end)}'
+        return '${fmt.format(range.start)} - ${fmt.format(range.end)}'
             .toUpperCase();
       case ReportPeriod.allTime:
         if (allTrips.isEmpty) return 'ALL TIME';
@@ -319,6 +360,7 @@ class _ReportsTabState extends ConsumerState<ReportsTab> {
     final isCustom = selectedPeriod == ReportPeriod.custom;
     final completedTrips = ref.watch(completedTripsProvider);
     final currency = ref.watch(currencyCodeProvider);
+    final typeFilter = ref.watch(selectedTripTypeFilterProvider);
 
     return Scaffold(
       body: SafeArea(
@@ -327,8 +369,15 @@ class _ReportsTabState extends ConsumerState<ReportsTab> {
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) => Center(child: Text('Error: $error')),
           data: (allTrips) {
-            final filteredTrips =
+            final periodFilteredTrips =
                 _filterTripsByPeriod(allTrips, selectedPeriod, selectedRange);
+            final filteredTrips =
+                _filterTripsByType(periodFilteredTrips, typeFilter);
+            final reportTitle = switch (typeFilter) {
+              TripTypeFilter.all => 'ALL TRIPS',
+              TripTypeFilter.business => 'BUSINESS TRIPS',
+              TripTypeFilter.personal => 'PERSONAL TRIPS',
+            };
             final stats = filteredTrips.isEmpty
                 ? TripStats.empty
                 : TripStats.fromTrips(filteredTrips);
@@ -353,6 +402,20 @@ class _ReportsTabState extends ConsumerState<ReportsTab> {
                   child: _RangeToggle(
                     period: selectedPeriod,
                     onChanged: _handleSelectPeriod,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppTheme.space16,
+                    0,
+                    AppTheme.space16,
+                    AppTheme.space14,
+                  ),
+                  child: _TypeFilterRow(
+                    filter: typeFilter,
+                    onChanged: (f) => ref
+                        .read(selectedTripTypeFilterProvider.notifier)
+                        .state = f,
                   ),
                 ),
                 if (isCustom)
@@ -422,7 +485,7 @@ class _ReportsTabState extends ConsumerState<ReportsTab> {
                           sub: 'Tax-ready',
                           enabled: filteredTrips.isNotEmpty,
                           onTap: () => _handleExportPDF(
-                              filteredTrips, periodLabel, currency),
+                              filteredTrips, periodLabel, currency, reportTitle, typeFilter),
                         ),
                       ),
                       const SizedBox(width: AppTheme.space10),
@@ -1236,6 +1299,51 @@ class _ExportButton extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _TypeFilterRow extends StatelessWidget {
+  const _TypeFilterRow({required this.filter, required this.onChanged});
+
+  final TripTypeFilter filter;
+  final ValueChanged<TripTypeFilter> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: colors.surfaceElevated,
+        border: Border.all(color: colors.border),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _RangeToggleButton(
+              label: 'All Trips',
+              selected: filter == TripTypeFilter.all,
+              onTap: () => onChanged(TripTypeFilter.all),
+            ),
+          ),
+          Expanded(
+            child: _RangeToggleButton(
+              label: 'Business',
+              selected: filter == TripTypeFilter.business,
+              onTap: () => onChanged(TripTypeFilter.business),
+            ),
+          ),
+          Expanded(
+            child: _RangeToggleButton(
+              label: 'Personal',
+              selected: filter == TripTypeFilter.personal,
+              onTap: () => onChanged(TripTypeFilter.personal),
+            ),
+          ),
+        ],
       ),
     );
   }

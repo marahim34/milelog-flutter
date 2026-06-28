@@ -12,7 +12,7 @@ import '../../data/services/permission_onboarding_service.dart';
 
 /// First-launch-only flow shown before login (see [AppRouter]'s redirect):
 ///
-/// Step 0 — Location (required)
+/// Step 0 — Location (required) + background location on Android 10+
 /// Step 1 — Background activity / battery optimisation (required on Android)
 /// Step 2 — Bluetooth (optional)
 ///
@@ -39,6 +39,14 @@ class _PermissionOnboardingScreenState
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
+      }
+      // Android 10+: background location ("Allow all the time") requires its
+      // own OS dialog after foreground is granted. Without it the static
+      // BluetoothAutoStartReceiver cannot start GPS when the app is killed.
+      if (Platform.isAndroid &&
+          permission != LocationPermission.denied &&
+          permission != LocationPermission.deniedForever) {
+        await Permission.locationAlways.request();
       }
     } finally {
       if (mounted) {

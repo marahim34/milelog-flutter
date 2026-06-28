@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:ui';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
@@ -9,30 +11,34 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/constants/app_constants.dart';
 import '../providers/repository_providers.dart';
 
-/// Keeps the app process alive as an Android foreground service while a
-/// trip is being tracked, so GPS collection in `LocationTrackingService`
-/// (running on the main isolate) survives the screen locking or the app
-/// being minimized.
+/// Broadcasts pause/resume events that originate from the native notification buttons.
+/// [main.dart] feeds this from the MethodChannel; [TrackingScreen] consumes it.
+class TrackingStateBridge {
+  static final StreamController<bool> pauseChanged =
+      StreamController<bool>.broadcast();
+}
+
+/// Manages the foreground tracking service lifecycle.
 ///
-/// Android grants a whole process the importance of its most active
-/// component — a foreground service with a visible notification is enough
-/// to keep the entire process (main UI isolate, the active geolocator
-/// stream, Riverpod state, the open Drift connection) from being killed by
-/// the low-memory killer while backgrounded. The actual GPS/distance logic
-/// intentionally stays on the main isolate rather than being duplicated
-/// into the service's own isolate — this isolate only hosts the
-/// persistent notification and relays live distance/duration into it via
-/// [updateNotification]. (iOS has no equivalent "foreground service"
-/// concept; true iOS background continuation needs Always location
-/// permission + the `location` UIBackgroundMode, which is a separate,
-/// larger change not included here.)
+/// On Android: delegates to the native [TrackingService.kt] foreground service,
+/// which runs independently of the Flutter engine (surviving process kill) and
+/// acquires a PARTIAL_WAKE_LOCK so the CPU stays alive during tracking.
+///
+/// On iOS: delegates to [flutter_background_service] which registers the
+/// background location mode declared in Info.plist.
 class BackgroundTrackingService {
   BackgroundTrackingService._();
 
+  static const _trackingChannel =
+      MethodChannel('com.example.milelog_flutter/tracking');
   static final _service = FlutterBackgroundService();
 
-  /// Registers the background service handlers. Call once at app startup
-  /// (see `main.dart`), before [start] is ever called.
+  /// Registers the flutter_background_service handlers (iOS + Android Bluetooth).
+  ///
+  /// On Android the native [TrackingService] is started on demand via MethodChannel —
+  /// no upfront flutter_background_service configuration is needed for tracking.
+  /// We still configure the service here for the Bluetooth killed-app path
+  /// (BluetoothAclReceiver.kt can wake flutter_background_service to write waypoints).
   static Future<void> initialize() async {
     await _service.configure(
       androidConfiguration: AndroidConfiguration(
@@ -53,36 +59,99 @@ class BackgroundTrackingService {
     );
   }
 
-  /// Starts the foreground service and its persistent notification.
-  /// Safe to call when already running — it no-ops.
-  static Future<void> start() async {
+  /// Starts the foreground tracking service.
+  ///
+  /// On Android starts the native [TrackingService] with [tripId] and
+  /// [startTimeMs] so it can write GPS points to the correct trip row even
+  /// after the Flutter engine is killed. Safe to call when already running.
+  static Future<void> start({
+    int? tripId,
+    int? startTimeMs,
+    double? odometerStart,
+  }) async {
+    if (Platform.isAndroid) {
+      try {
+        await _trackingChannel.invokeMethod<void>('startTracking', {
+          'tripId': tripId ?? -1,
+          'startTimeMs': startTimeMs ?? DateTime.now().millisecondsSinceEpoch,
+          'odometerStart': odometerStart ?? 0.0,
+        });
+      } catch (_) {
+        // Non-fatal — GPS still runs on the main isolate as fallback.
+      }
+      return;
+    }
     if (await _service.isRunning()) return;
     await _service.startService();
   }
 
-  /// Stops the foreground service and dismisses its notification. Safe to
-  /// call when not running.
+  /// Stops the foreground tracking service. Safe to call when not running.
   static Future<void> stop() async {
+    if (Platform.isAndroid) {
+      try {
+        await _trackingChannel.invokeMethod<void>('stopTracking');
+      } catch (_) {}
+      return;
+    }
     if (!await _service.isRunning()) return;
     _service.invoke('stopService');
   }
 
   /// Pushes the latest distance/duration into the persistent notification.
+  ///
+  /// On Android this is a no-op — [TrackingService.kt] updates the notification
+  /// on its own 30-second timer so there is no need to call from Dart.
   static Future<void> updateNotification({
     required double distanceKm,
     required int elapsedSeconds,
   }) async {
+    if (Platform.isAndroid) return;
     if (!await _service.isRunning()) return;
     _service.invoke('updateNotification', {
       'distanceKm': distanceKm,
       'elapsedSeconds': elapsedSeconds,
     });
   }
+
+  /// Asks Android to exempt the app from battery optimisation so GPS is not
+  /// suspended when the screen turns off. No-op if already granted or on iOS.
+  static Future<void> requestBatteryOptimization() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _trackingChannel
+          .invokeMethod<void>('requestBatteryOptimization');
+    } catch (_) {}
+  }
+
+  /// Returns true if [TrackingService] is currently in a paused state
+  /// (GPS stopped via the Pause notification button). Always false on iOS.
+  static Future<bool> isNativePaused() async {
+    if (!Platform.isAndroid) return false;
+    try {
+      final state = await _trackingChannel
+          .invokeMethod<Map<Object?, Object?>>('getTrackingState');
+      return state?['isPaused'] as bool? ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Returns true when Android has whitelisted the app from battery
+  /// optimisation, or always true on iOS.
+  static Future<bool> isBatteryOptimizationIgnored() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      return await _trackingChannel
+              .invokeMethod<bool>('isBatteryOptimizationIgnored') ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
 }
 
-/// Runs on a separate isolate hosted by the Android foreground service (or
-/// briefly per background fetch on iOS). Must be a top-level function — see
-/// the flutter_background_service requirements.
+/// Runs in the flutter_background_service isolate (iOS foreground handler
+/// and Android Bluetooth wake-up path). Must be a top-level function.
 @pragma('vm:entry-point')
 void _onStart(ServiceInstance service) {
   DartPluginRegistrant.ensureInitialized();
@@ -104,26 +173,12 @@ void _onStart(ServiceInstance service) {
     );
   });
 
-  // This service can be started two ways: normally (a live trip's
-  // foreground notification — _initialize in tracking_notifier.dart) or
-  // woken by BluetoothAclReceiver.kt for a killed-app Bluetooth event,
-  // which writes a one-shot instruction into SharedPreferences before
-  // starting it. Check for that instruction every time this isolate boots.
+  // Handles Bluetooth-triggered waypoints when the app is killed.
   unawaited(_handlePendingBluetoothAction());
 }
 
-/// Reads and clears the pending Bluetooth action `BluetoothAutoTrackPrefs`
-/// (native) leaves for this headless isolate — see its class doc for the
-/// full action set. Only `disconnected_commit` (the 3-minute merge window
-/// elapsed with no reconnect) and `connected_after_stop` (reconnect after
-/// that commit) need a DB write here; `disconnected`/`connected_merge`
-/// have nothing to do without a live `LocationTrackingService` to
-/// pause/resume, and `connected_cold` is handled natively via a tap-to-
-/// launch notification instead of reaching here at all.
-///
-/// Builds its own standalone [ProviderContainer] — this isolate has no
-/// `ProviderScope` widget tree, but the repository/DAO providers don't need
-/// one; they only need a container to be read from, same as in any test.
+/// Reads and clears the pending Bluetooth action left by [BluetoothAutoTrackPrefs]
+/// and writes the appropriate waypoint to the database.
 Future<void> _handlePendingBluetoothAction() async {
   final prefs = await SharedPreferences.getInstance();
   final action = prefs.getString('bt_pending_action');
@@ -157,7 +212,7 @@ Future<void> _handlePendingBluetoothAction() async {
             const LocationSettings(accuracy: LocationAccuracy.medium),
       ).timeout(const Duration(seconds: 15));
     } catch (_) {
-      return; // Best-effort — no fix, no waypoint.
+      return;
     }
 
     final distanceKm =

@@ -1,6 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- Required on Android 10+ for GPS to keep running when the app is in the
+         background (e.g. screen off during a tracked trip). Declared separately
+         from ACCESS_FINE_LOCATION so Android shows the dedicated "Allow all the
+         time" dialog — see permission_onboarding_screen.dart step 0. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
 
     <!-- Background tracking: keeps the process alive (via a foreground
          service) so GPS collection survives the screen locking or the app
@@ -33,20 +38,36 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
 
     <application
-        android:label="milelog_flutter"
+        android:label="MileLog"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="true"
+        android:enableOnBackInvokedCallback="true">
         <service
             android:name="id.flutter.flutter_background_service.BackgroundService"
             android:foregroundServiceType="location"
             android:stopWithTask="false"/>
 
-        <!-- Static (manifest-declared) receiver — unlike the dynamic one
-             registered in MainActivity, this fires even when the app is
-             fully killed. See BluetoothAclReceiver.kt. -->
+        <!-- Native GPS foreground service — runs independently of the Flutter
+             engine so tracking continues when the user swipes the app away.
+             stopWithTask="false" keeps it alive across task removal. -->
+        <service
+            android:name=".TrackingService"
+            android:foregroundServiceType="location"
+            android:stopWithTask="false"
+            android:exported="false"/>
+
+        <!-- Static receiver that handles Bluetooth ACL events for ALL app states
+             (alive, backgrounded, or fully killed). Replaces the "one-shot"
+             BluetoothAclReceiver pattern that broke on Android 12+ because
+             AppRouter.push() is blocked when the app is backgrounded.
+             android:permission restricts delivery to the Bluetooth stack only.
+             See BluetoothAutoStartReceiver.kt. -->
         <receiver
-            android:name=".BluetoothAclReceiver"
-            android:exported="true">
+            android:name=".BluetoothAutoStartReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.BLUETOOTH_CONNECT">
             <intent-filter>
                 <action android:name="android.bluetooth.device.action.ACL_CONNECTED"/>
                 <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED"/>

@@ -54,6 +54,8 @@ class TripRepository {
     return active;
   }
 
+  Future<Trip?> getActiveTrip() => _tripsDao.getActiveTrip();
+
   /// Returns all active trips (for crash recovery detection on app launch).
   Future<List<Trip>> getActiveTrips() => _tripsDao.getActiveTrips();
 

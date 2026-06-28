@@ -29,15 +29,11 @@ class TripDetailEditorResult {
   const TripDetailEditorResult({
     required this.tripType,
     required this.companyName,
-    required this.odometerStart,
-    required this.odometerEnd,
     required this.notes,
   });
 
   final TripType tripType;
   final String companyName;
-  final double odometerStart;
-  final double odometerEnd;
   final String notes;
 }
 
@@ -53,38 +49,24 @@ class TripDetailEditorSheet extends ConsumerStatefulWidget {
   const TripDetailEditorSheet({
     required this.initialTripType,
     required this.initialCompanyName,
-    required this.initialOdometerStart,
-    required this.initialOdometerEnd,
     required this.initialNotes,
     required this.gpsDistanceKm,
     this.title = 'Trip details',
     this.saveLabel = 'Save',
     this.recap,
-    this.lastOdometerReading,
     super.key,
   });
 
   final TripType initialTripType;
   final String initialCompanyName;
-  final double initialOdometerStart;
-  final double initialOdometerEnd;
   final String initialNotes;
 
-  /// The trip's GPS-measured distance — always authoritative (CLAUDE.md:
-  /// distance is computed from GPS at stop time, never overridden by the
-  /// odometer fields below). Used to flag a mismatch, not to gate saving.
+  /// The trip's GPS-measured distance — always authoritative; shown in recap.
   final double gpsDistanceKm;
 
   final String title;
   final String saveLabel;
   final TripRecapData? recap;
-
-  /// The vehicle's odometer reading before this trip. When set, the start
-  /// field can't be entered below it — the odometer never runs backwards.
-  /// Left null when editing a historical trip, since the vehicle's
-  /// *current* reading has since advanced past many later trips and is no
-  /// longer a valid floor for this one.
-  final double? lastOdometerReading;
 
   @override
   ConsumerState<TripDetailEditorSheet> createState() =>
@@ -95,8 +77,6 @@ class _TripDetailEditorSheetState
     extends ConsumerState<TripDetailEditorSheet> {
   late TripType _tripType;
   late final TextEditingController _companyController;
-  late final TextEditingController _odoStartController;
-  late final TextEditingController _odoEndController;
   late final TextEditingController _notesController;
 
   @override
@@ -104,61 +84,21 @@ class _TripDetailEditorSheetState
     super.initState();
     _tripType = widget.initialTripType;
     _companyController = TextEditingController(text: widget.initialCompanyName);
-    _odoStartController = TextEditingController(
-      text: widget.initialOdometerStart > 0
-          ? widget.initialOdometerStart.toStringAsFixed(0)
-          : '',
-    );
-    _odoEndController = TextEditingController(
-      text: widget.initialOdometerEnd > 0
-          ? widget.initialOdometerEnd.toStringAsFixed(0)
-          : '',
-    );
     _notesController = TextEditingController(text: widget.initialNotes);
   }
 
   @override
   void dispose() {
     _companyController.dispose();
-    _odoStartController.dispose();
-    _odoEndController.dispose();
     _notesController.dispose();
     super.dispose();
   }
 
-  double get _odoStart => double.tryParse(_odoStartController.text.trim()) ?? 0;
-  double get _odoEnd => double.tryParse(_odoEndController.text.trim()) ?? 0;
-  double get _odoKm => (_odoEnd - _odoStart).clamp(0, double.infinity);
-
-  bool get _odometerEntered => _odoStart > 0 || _odoEnd > 0;
-
-  bool get _startTooLow {
-    final lastReading = widget.lastOdometerReading;
-    if (_odoStart <= 0 || lastReading == null || lastReading <= 0) return false;
-    // Compare against the same whole-km rounding the field displays/parses,
-    // so a vehicle reading like 9.4 km doesn't falsely flag the "9" the
-    // field shows for it as "too low".
-    return _odoStart < lastReading.roundToDouble();
-  }
-
-  bool get _endTooLow => _odoStart > 0 && _odoEnd > 0 && _odoEnd < _odoStart;
-
-  bool get _valid => !_startTooLow && !_endTooLow;
-
-  bool get _mismatch =>
-      _valid &&
-      _odoStart > 0 &&
-      _odoEnd > 0 &&
-      (_odoKm - widget.gpsDistanceKm).abs() > 5;
-
   void _save() {
-    if (!_valid) return;
     Navigator.of(context).pop(
       TripDetailEditorResult(
         tripType: _tripType,
         companyName: _companyController.text.trim(),
-        odometerStart: _odoStart,
-        odometerEnd: _odoEnd,
         notes: _notesController.text.trim(),
       ),
     );
@@ -168,7 +108,6 @@ class _TripDetailEditorSheetState
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
     final recap = widget.recap;
-    final lastReading = widget.lastOdometerReading;
 
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -291,126 +230,6 @@ class _TripDetailEditorSheetState
               ),
             ),
             const SizedBox(height: AppTheme.space16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'ODOMETER',
-                  style: Theme.of(context)
-                      .textTheme
-                      .labelSmall
-                      ?.copyWith(color: colors.textDimmer, letterSpacing: 1.2),
-                ),
-                if (lastReading != null && lastReading > 0)
-                  Text(
-                    'Last: ${lastReading.toStringAsFixed(0)} km',
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelSmall
-                        ?.copyWith(color: colors.textDim),
-                  ),
-              ],
-            ),
-            const SizedBox(height: AppTheme.space8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(
-                  child: OdoField(
-                    label: 'Start',
-                    controller: _odoStartController,
-                    error: _startTooLow,
-                    onChanged: (_) => setState(() {}),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(
-                    bottom: AppTheme.space14,
-                    left: AppTheme.space8,
-                    right: AppTheme.space8,
-                  ),
-                  child: Icon(Icons.arrow_forward, color: colors.textDimmer),
-                ),
-                Expanded(
-                  child: OdoField(
-                    label: 'End',
-                    controller: _odoEndController,
-                    error: _endTooLow,
-                    onChanged: (_) => setState(() {}),
-                  ),
-                ),
-              ],
-            ),
-            if (_startTooLow) ...[
-              const SizedBox(height: AppTheme.space10),
-              ValidationMessage(
-                isDanger: true,
-                message: 'Start can\'t be below the last reading '
-                    '(${lastReading!.toStringAsFixed(0)} km). The odometer '
-                    'never runs backwards.',
-              ),
-            ],
-            if (_endTooLow) ...[
-              const SizedBox(height: AppTheme.space10),
-              const ValidationMessage(
-                isDanger: true,
-                message: 'End reading must be greater than the start reading.',
-              ),
-            ],
-            if (_odometerEntered) ...[
-              const SizedBox(height: AppTheme.space16),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppTheme.space16,
-                  vertical: AppTheme.space14,
-                ),
-                decoration: BoxDecoration(
-                  color: _valid ? colors.accentTint : colors.surfaceInset,
-                  border: Border.all(color: _valid ? colors.accent : colors.border),
-                  borderRadius: BorderRadius.circular(AppTheme.cardRadius),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Text(
-                      'DISTANCE',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: _valid ? colors.accent : colors.textDimmer,
-                            letterSpacing: 1.2,
-                          ),
-                    ),
-                    Text.rich(
-                      TextSpan(
-                        text: _odoKm.toStringAsFixed(1),
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                              color: _valid ? colors.accent : colors.textDim,
-                            ),
-                        children: [
-                          TextSpan(
-                            text: ' km',
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  color: _valid ? colors.accent : colors.textDim,
-                                ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (_mismatch) ...[
-                const SizedBox(height: AppTheme.space10),
-                ValidationMessage(
-                  isDanger: false,
-                  message: 'Entered distance (${_odoKm.toStringAsFixed(1)} km) '
-                      'differs from the GPS-measured '
-                      '${widget.gpsDistanceKm.toStringAsFixed(1)} km. '
-                      'Double-check the readings.',
-                ),
-              ],
-            ],
-            const SizedBox(height: AppTheme.space16),
             TextField(
               controller: _companyController,
               decoration: const InputDecoration(
@@ -445,7 +264,7 @@ class _TripDetailEditorSheetState
                 Expanded(
                   flex: 2,
                   child: ElevatedButton(
-                    onPressed: _valid ? _save : null,
+                    onPressed: _save,
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(
                           vertical: AppTheme.space14),

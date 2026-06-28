@@ -31,7 +31,6 @@ class VehicleRepository {
   Future<int> addVehicle({
     required String name,
     required String plateNumber,
-    required double defaultMileageRate,
     required double initialOdometer,
     required bool isDefault,
     String? bluetoothMac,
@@ -44,7 +43,6 @@ class VehicleRepository {
       VehiclesCompanion.insert(
         name: name,
         plateNumber: plateNumber,
-        defaultMileageRate: Value(defaultMileageRate),
         initialOdometer: Value(initialOdometer),
         lastOdometer: Value(initialOdometer),
         isDefault: Value(isDefault),
@@ -61,7 +59,6 @@ class VehicleRepository {
     required Vehicle existing,
     required String name,
     required String plateNumber,
-    required double defaultMileageRate,
     required double initialOdometer,
     required bool isDefault,
     String? bluetoothMac,
@@ -76,7 +73,6 @@ class VehicleRepository {
           .copyWith(
             name: name,
             plateNumber: plateNumber,
-            defaultMileageRate: defaultMileageRate,
             initialOdometer: initialOdometer,
             isDefault: isDefault,
             bluetoothMac: Value(bluetoothMac),

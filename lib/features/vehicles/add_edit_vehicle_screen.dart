@@ -33,7 +33,6 @@ class AddEditVehicleScreen extends ConsumerWidget {
           onSave: ({
             required name,
             required plateNumber,
-            required defaultMileageRate,
             required initialOdometer,
             required isDefault,
             required bluetoothMac,
@@ -42,7 +41,6 @@ class AddEditVehicleScreen extends ConsumerWidget {
             await ref.read(addEditVehicleProvider(vehicleId).notifier).save(
                   name: name,
                   plateNumber: plateNumber,
-                  defaultMileageRate: defaultMileageRate,
                   initialOdometer: initialOdometer,
                   isDefault: isDefault,
                   bluetoothMac: bluetoothMac,
@@ -59,7 +57,6 @@ class AddEditVehicleScreen extends ConsumerWidget {
 typedef _VehicleSaveCallback = Future<void> Function({
   required String name,
   required String plateNumber,
-  required double defaultMileageRate,
   required double initialOdometer,
   required bool isDefault,
   required String? bluetoothMac,
@@ -80,7 +77,6 @@ class _VehicleFormState extends ConsumerState<_VehicleForm> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
   late final TextEditingController _plateController;
-  late final TextEditingController _mileageRateController;
   late final TextEditingController _initialOdometerController;
   late bool _isDefault;
   bool _isSaving = false;
@@ -96,11 +92,6 @@ class _VehicleFormState extends ConsumerState<_VehicleForm> {
     final vehicle = widget.initialVehicle;
     _nameController = TextEditingController(text: vehicle?.name ?? '');
     _plateController = TextEditingController(text: vehicle?.plateNumber ?? '');
-    _mileageRateController = TextEditingController(
-      text: vehicle != null && vehicle.defaultMileageRate > 0
-          ? vehicle.defaultMileageRate.toString()
-          : '',
-    );
     _initialOdometerController = TextEditingController(
       text: vehicle != null ? vehicle.initialOdometer.toString() : '0',
     );
@@ -131,7 +122,6 @@ class _VehicleFormState extends ConsumerState<_VehicleForm> {
   void dispose() {
     _nameController.dispose();
     _plateController.dispose();
-    _mileageRateController.dispose();
     _initialOdometerController.dispose();
     super.dispose();
   }
@@ -205,8 +195,6 @@ class _VehicleFormState extends ConsumerState<_VehicleForm> {
       await widget.onSave(
         name: _nameController.text.trim(),
         plateNumber: _plateController.text.trim(),
-        defaultMileageRate:
-            double.tryParse(_mileageRateController.text.trim()) ?? 0.0,
         initialOdometer:
             double.tryParse(_initialOdometerController.text.trim()) ?? 0.0,
         isDefault: _isDefault,
@@ -224,157 +212,140 @@ class _VehicleFormState extends ConsumerState<_VehicleForm> {
     final isPaired = _bluetoothMac != null;
     return SafeArea(
       bottom: false,
-      child: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(
-          AppTheme.space20,
-          AppTheme.space20,
-          AppTheme.space20,
-          AppTheme.space20 + MediaQuery.of(context).padding.bottom,
-        ),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const _SectionLabel('VEHICLE DETAILS'),
-              const SizedBox(height: AppTheme.space8),
-              TextFormField(
-                controller: _nameController,
-                textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(
-                  labelText: 'Vehicle name',
-                  prefixIcon: Icon(Icons.directions_car),
-                ),
-                validator: (value) => (value == null || value.trim().isEmpty)
-                    ? 'Enter a vehicle name'
-                    : null,
+      child: Form(
+        key: _formKey,
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(
+            AppTheme.space16,
+            AppTheme.space16,
+            AppTheme.space16,
+            AppTheme.space16 + MediaQuery.of(context).padding.bottom,
+          ),
+          children: [
+            const _SectionLabel('VEHICLE DETAILS'),
+            const SizedBox(height: AppTheme.space8),
+            TextFormField(
+              controller: _nameController,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(
+                labelText: 'Vehicle name',
+                prefixIcon: Icon(Icons.directions_car),
               ),
-              const SizedBox(height: AppTheme.space16),
-              TextFormField(
-                controller: _plateController,
-                textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(
-                  labelText: 'Plate number',
-                  prefixIcon: Icon(Icons.pin_outlined),
-                ),
-                validator: (value) => (value == null || value.trim().isEmpty)
-                    ? 'Enter a plate number'
-                    : null,
+              validator: (value) => (value == null || value.trim().isEmpty)
+                  ? 'Enter a vehicle name'
+                  : null,
+            ),
+            const SizedBox(height: AppTheme.space16),
+            TextFormField(
+              controller: _plateController,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(
+                labelText: 'Plate number',
+                prefixIcon: Icon(Icons.pin_outlined),
               ),
-              const SizedBox(height: AppTheme.space20),
-              const _SectionLabel('MILEAGE'),
-              const SizedBox(height: AppTheme.space8),
-              TextFormField(
-                controller: _mileageRateController,
-                textInputAction: TextInputAction.next,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'Mileage rate (per km)',
-                  helperText: 'Applies to business trips only. Leave blank '
-                      'to use the global default rate.',
-                  helperMaxLines: 2,
-                  prefixIcon: Icon(Icons.euro),
-                ),
+              validator: (value) => (value == null || value.trim().isEmpty)
+                  ? 'Enter a plate number'
+                  : null,
+            ),
+            const SizedBox(height: AppTheme.space24),
+            const _SectionLabel('ODOMETER'),
+            const SizedBox(height: AppTheme.space8),
+            TextFormField(
+              controller: _initialOdometerController,
+              textInputAction: TextInputAction.done,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Initial odometer (km)',
+                prefixIcon: Icon(Icons.speed),
               ),
-              const SizedBox(height: AppTheme.space16),
-              TextFormField(
-                controller: _initialOdometerController,
-                textInputAction: TextInputAction.done,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'Initial odometer (km)',
-                  prefixIcon: Icon(Icons.speed),
-                ),
-                validator: (value) {
-                  final parsed = double.tryParse((value ?? '').trim());
-                  return parsed == null ? 'Enter a valid number' : null;
-                },
+              validator: (value) {
+                final parsed = double.tryParse((value ?? '').trim());
+                return parsed == null ? 'Enter a valid number' : null;
+              },
+            ),
+            const SizedBox(height: AppTheme.space16),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Set as default vehicle'),
+              value: _isDefault,
+              onChanged: (value) => setState(() => _isDefault = value),
+            ),
+            const SizedBox(height: AppTheme.space24),
+            const _SectionLabel('BLUETOOTH'),
+            const SizedBox(height: AppTheme.space8),
+            Container(
+              decoration: BoxDecoration(
+                color: colors.surfaceElevated,
+                border: Border.all(color: colors.border),
+                borderRadius: BorderRadius.circular(AppTheme.cardRadius),
               ),
-              const SizedBox(height: AppTheme.space16),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Set as default vehicle'),
-                value: _isDefault,
-                onChanged: (value) => setState(() => _isDefault = value),
-              ),
-              const SizedBox(height: AppTheme.space20),
-              const _SectionLabel('BLUETOOTH'),
-              const SizedBox(height: AppTheme.space8),
-              Container(
-                decoration: BoxDecoration(
-                  color: colors.surfaceElevated,
-                  border: Border.all(color: colors.border),
-                  borderRadius: BorderRadius.circular(AppTheme.cardRadius),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Column(
-                  children: [
-                    ListTile(
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                children: [
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.space16,
+                      vertical: AppTheme.space14,
+                    ),
+                    leading: Icon(Icons.bluetooth, color: colors.accent),
+                    title: Text(isPaired
+                        ? (_bluetoothDeviceName ?? _bluetoothMac!)
+                        : 'No paired device'),
+                    subtitle: Text(
+                      isPaired
+                          ? _bluetoothMac!
+                          : 'Pair a Bluetooth device to auto-start trips',
+                    ),
+                    trailing: _resolvingDeviceName
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : isPaired
+                            ? IconButton(
+                                icon: const Icon(Icons.close),
+                                tooltip: 'Forget device',
+                                onPressed: _handleForgetDevice,
+                              )
+                            : Icon(Icons.chevron_right,
+                                color: colors.textDimmer),
+                    onTap: _handlePairDevice,
+                  ),
+                  if (isPaired)
+                    SwitchListTile(
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: AppTheme.space16,
                         vertical: AppTheme.space14,
                       ),
-                      leading: Icon(Icons.bluetooth, color: colors.accent),
-                      title: Text(isPaired
-                          ? (_bluetoothDeviceName ?? _bluetoothMac!)
-                          : 'No paired device'),
-                      subtitle: Text(
-                        isPaired
-                            ? _bluetoothMac!
-                            : 'Pair a Bluetooth device to auto-start trips',
+                      title: const Text('Auto-start trip on connect'),
+                      subtitle: const Text(
+                        'Starts tracking when this device connects, '
+                        'pauses on disconnect',
                       ),
-                      trailing: _resolvingDeviceName
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : isPaired
-                              ? IconButton(
-                                  icon: const Icon(Icons.close),
-                                  tooltip: 'Forget device',
-                                  onPressed: _handleForgetDevice,
-                                )
-                              : Icon(Icons.chevron_right,
-                                  color: colors.textDimmer),
-                      onTap: _handlePairDevice,
+                      value: _bluetoothAutoStart,
+                      onChanged: (value) =>
+                          setState(() => _bluetoothAutoStart = value),
                     ),
-                    if (isPaired)
-                      SwitchListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: AppTheme.space16,
-                          vertical: AppTheme.space14,
-                        ),
-                        title: const Text('Auto-start trip on connect'),
-                        subtitle: const Text(
-                          'Starts tracking when this device connects, '
-                          'pauses on disconnect',
-                        ),
-                        value: _bluetoothAutoStart,
-                        onChanged: (value) =>
-                            setState(() => _bluetoothAutoStart = value),
-                      ),
-                  ],
-                ),
+                ],
               ),
-              const SizedBox(height: AppTheme.space24),
-              ElevatedButton(
-                onPressed: _isSaving ? null : _handleSave,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: AppTheme.space4),
-                  child: _isSaving
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Save'),
-                ),
+            ),
+            const SizedBox(height: AppTheme.space24),
+            ElevatedButton(
+              onPressed: _isSaving ? null : _handleSave,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppTheme.space4),
+                child: _isSaving
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Save'),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -388,13 +359,12 @@ class _SectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = AppColors.of(context);
     return Text(
       title,
       style: Theme.of(context)
           .textTheme
-          .labelSmall
-          ?.copyWith(color: colors.textDimmer, letterSpacing: 1.2),
+          .labelLarge
+          ?.copyWith(letterSpacing: 1.2),
     );
   }
 }

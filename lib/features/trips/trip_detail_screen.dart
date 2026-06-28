@@ -149,7 +149,7 @@ class TripDetailScreen extends ConsumerWidget {
   }
 }
 
-class _TripDetailBody extends StatelessWidget {
+class _TripDetailBody extends StatefulWidget {
   const _TripDetailBody({
     required this.trip,
     required this.locationPoints,
@@ -166,6 +166,13 @@ class _TripDetailBody extends StatelessWidget {
   final String timeWindowLabel;
   final String durationLabel;
 
+  @override
+  State<_TripDetailBody> createState() => _TripDetailBodyState();
+}
+
+class _TripDetailBodyState extends State<_TripDetailBody> {
+  int? _selectedStopIndex;
+
   String _formatStopTime(int timestampMs) {
     return DateFormat('h:mm a')
         .format(DateTime.fromMillisecondsSinceEpoch(timestampMs));
@@ -181,10 +188,9 @@ class _TripDetailBody extends StatelessWidget {
     return '${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}';
   }
 
-  /// Always Start → (stops) → End, matching the design's `TripStopList` —
-  /// the trip's own endpoints are timeline entries too, not just whatever
-  /// Bluetooth/GPS-dwell stops happened in between.
-  List<_TimelineEntry> _buildTimeline(List<TripStop> gpsStops) {
+  List<_TimelineEntry> _buildTimelineFromWaypoints(
+      List<TripWaypoint> pauseWps) {
+    final trip = widget.trip;
     final entries = <_TimelineEntry>[
       _TimelineEntry(
         kind: _TimelineKind.start,
@@ -193,32 +199,66 @@ class _TripDetailBody extends StatelessWidget {
             : _fallbackLocation(trip.startLat, trip.startLng),
         timeMs: trip.startTime,
         meta: 'Departure',
+        odometerKm: trip.odometerStart > 0 ? trip.odometerStart : null,
       ),
     ];
 
-    if (waypoints.isNotEmpty) {
-      TripWaypoint? pendingPause;
-      for (final wp in waypoints) {
-        if (wp.isPause) {
-          if (pendingPause != null) {
-            entries.add(_pauseEntry(pendingPause, null));
-          }
-          pendingPause = wp;
-        } else {
-          entries.add(_pauseEntry(pendingPause, wp));
-          pendingPause = null;
-        }
-      }
-      if (pendingPause != null) entries.add(_pauseEntry(pendingPause, null));
-    } else {
-      for (final stop in gpsStops) {
-        entries.add(_TimelineEntry(
-          kind: _TimelineKind.stop,
-          name: 'Stop',
-          timeMs: stop.startTimeMs,
-          meta: _formatDwell(stop.dwell),
-        ));
-      }
+    double prevDistKm = 0.0;
+    for (var i = 0; i < pauseWps.length; i++) {
+      final wp = pauseWps[i];
+      final segKm = wp.distanceKmAtStop - prevDistKm;
+      entries.add(_TimelineEntry(
+        kind: _TimelineKind.stop,
+        name: wp.address.isNotEmpty
+            ? wp.address
+            : _fallbackLocation(wp.latitude, wp.longitude),
+        timeMs: wp.timestamp,
+        meta: 'Stop',
+        stopNumber: i + 1,
+        odometerKm: trip.odometerStart > 0
+            ? trip.odometerStart + wp.distanceKmAtStop
+            : null,
+        segmentDistanceKm: segKm > 0.01 ? segKm : null,
+      ));
+      prevDistKm = wp.distanceKmAtStop;
+    }
+
+    final finalSegKm = trip.distanceKm - prevDistKm;
+    entries.add(_TimelineEntry(
+      kind: _TimelineKind.end,
+      name: trip.endAddress.isNotEmpty
+          ? trip.endAddress
+          : _fallbackLocation(trip.endLat, trip.endLng),
+      timeMs: trip.endTime ?? trip.startTime,
+      meta: 'Arrival',
+      odometerKm: trip.odometerEnd > 0 ? trip.odometerEnd : null,
+      segmentDistanceKm: finalSegKm > 0.01 ? finalSegKm : null,
+    ));
+    return entries;
+  }
+
+  List<_TimelineEntry> _buildTimelineFromGpsStops(List<TripStop> gpsStops) {
+    final trip = widget.trip;
+    final entries = <_TimelineEntry>[
+      _TimelineEntry(
+        kind: _TimelineKind.start,
+        name: trip.startAddress.isNotEmpty
+            ? trip.startAddress
+            : _fallbackLocation(trip.startLat, trip.startLng),
+        timeMs: trip.startTime,
+        meta: 'Departure',
+        odometerKm: trip.odometerStart > 0 ? trip.odometerStart : null,
+      ),
+    ];
+
+    for (var i = 0; i < gpsStops.length; i++) {
+      entries.add(_TimelineEntry(
+        kind: _TimelineKind.stop,
+        name: 'Stop ${i + 1}',
+        timeMs: gpsStops[i].startTimeMs,
+        meta: _formatDwell(gpsStops[i].dwell),
+        stopNumber: i + 1,
+      ));
     }
 
     entries.add(_TimelineEntry(
@@ -228,42 +268,30 @@ class _TripDetailBody extends StatelessWidget {
           : _fallbackLocation(trip.endLat, trip.endLng),
       timeMs: trip.endTime ?? trip.startTime,
       meta: 'Arrival',
+      odometerKm: trip.odometerEnd > 0 ? trip.odometerEnd : null,
     ));
-
     return entries;
-  }
-
-  _TimelineEntry _pauseEntry(TripWaypoint? pause, TripWaypoint? resume) {
-    final anchor = pause ?? resume!;
-    final name = anchor.address.isNotEmpty ? anchor.address : 'Stop';
-    final meta = pause != null && resume != null
-        ? 'Stop · ${_formatDwell(Duration(milliseconds: resume.timestamp - pause.timestamp))}'
-        : 'Stop';
-    return _TimelineEntry(
-      kind: _TimelineKind.stop,
-      name: name,
-      timeMs: anchor.timestamp,
-      meta: meta,
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
+    final trip = widget.trip;
+    final locationPoints = widget.locationPoints;
+    final waypoints = widget.waypoints;
     final routePoints = locationPoints
         .map((p) => LatLng(p.latitude, p.longitude))
         .toList(growable: false);
     // Real Bluetooth-driven stops take priority over GPS-dwell detection
     // for the text timeline below — they carry an actual address and a
-    // precise distance-at-stop rather than an inferred dwell. The dwell
-    // detector remains the fallback for trips with no recorded waypoints
-    // (no Bluetooth-tracked vehicle, or trips from before this feature),
-    // and still drives the map's stop-cluster markers either way.
+    // precise distance-at-stop rather than an inferred dwell.
     final stops = const TripStopDetector().detect(locationPoints);
     final pauseWaypoints = waypoints.where((w) => w.isPause).toList();
     final stopCount =
         waypoints.isNotEmpty ? pauseWaypoints.length : stops.length;
-    final timeline = _buildTimeline(stops);
+    final timeline = pauseWaypoints.isNotEmpty
+        ? _buildTimelineFromWaypoints(pauseWaypoints)
+        : _buildTimelineFromGpsStops(stops);
 
     final mapOptions = routePoints.isNotEmpty
         ? MapOptions(
@@ -295,7 +323,7 @@ class _TripDetailBody extends StatelessWidget {
             const SizedBox(width: AppTheme.space8),
             Expanded(
               child: Text(
-                '$dateLabel · $timeWindowLabel',
+                '${widget.dateLabel} · ${widget.timeWindowLabel}',
                 style: Theme.of(context)
                     .textTheme
                     .labelSmall
@@ -338,18 +366,48 @@ class _TripDetailBody extends StatelessWidget {
                           ),
                         ],
                       ),
-                    if (stops.isNotEmpty)
+                    // BT waypoints: numbered tappable markers that sync
+                    // with the timeline highlight below.
+                    if (pauseWaypoints.isNotEmpty)
+                      MarkerLayer(
+                        markers: [
+                          for (var i = 0; i < pauseWaypoints.length; i++)
+                            Marker(
+                              point: LatLng(pauseWaypoints[i].latitude,
+                                  pauseWaypoints[i].longitude),
+                              width: 28,
+                              height: 28,
+                              child: GestureDetector(
+                                onTap: () => setState(() =>
+                                    _selectedStopIndex = _selectedStopIndex ==
+                                            i
+                                        ? null
+                                        : i),
+                                child: _numberedStopMarker(
+                                    colors, i + 1, _selectedStopIndex == i),
+                              ),
+                            ),
+                        ],
+                      ),
+                    // GPS stops (fallback): cluster layer when no BT waypoints
+                    if (stops.isNotEmpty && pauseWaypoints.isEmpty)
                       MarkerClusterLayerWidget(
                         options: MarkerClusterLayerOptions(
                           maxClusterRadius: 34,
                           size: const Size(30, 30),
                           markers: [
-                            for (final stop in stops)
+                            for (var i = 0; i < stops.length; i++)
                               Marker(
-                                point: stop.position,
-                                width: 18,
-                                height: 18,
-                                child: _stopDotMarker(colors),
+                                point: stops[i].position,
+                                width: 28,
+                                height: 28,
+                                child: GestureDetector(
+                                  onTap: () => setState(() =>
+                                      _selectedStopIndex =
+                                          _selectedStopIndex == i ? null : i),
+                                  child: _numberedStopMarker(
+                                      colors, i + 1, _selectedStopIndex == i),
+                                ),
                               ),
                           ],
                           builder: (context, markers) =>
@@ -370,6 +428,19 @@ class _TripDetailBody extends StatelessWidget {
                         ],
                       ),
                   ],
+                ),
+                Positioned(
+                  bottom: 4,
+                  right: 4,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 4, vertical: 2),
+                    color: Colors.white.withValues(alpha: 0.7),
+                    child: const Text(
+                      '© OpenStreetMap',
+                      style: TextStyle(fontSize: 10, color: Colors.black87),
+                    ),
+                  ),
                 ),
                 Positioned(
                   top: 8,
@@ -443,12 +514,27 @@ class _TripDetailBody extends StatelessWidget {
           ),
           child: Column(
             children: [
-              for (var i = 0; i < timeline.length; i++)
+              for (var i = 0; i < timeline.length; i++) ...[
                 _TimelineRow(
                   entry: timeline[i],
                   isLast: i == timeline.length - 1,
                   timeLabel: _formatStopTime(timeline[i].timeMs),
+                  isSelected: _selectedStopIndex != null &&
+                      timeline[i].stopNumber != null &&
+                      timeline[i].stopNumber! - 1 == _selectedStopIndex,
+                  onTap: timeline[i].stopNumber != null
+                      ? () => setState(() {
+                            final idx = timeline[i].stopNumber! - 1;
+                            _selectedStopIndex =
+                                _selectedStopIndex == idx ? null : idx;
+                          })
+                      : null,
                 ),
+                if (i < timeline.length - 1 &&
+                    timeline[i + 1].segmentDistanceKm != null)
+                  _SegmentDistanceLabel(
+                      km: timeline[i + 1].segmentDistanceKm!),
+              ],
             ],
           ),
         ),
@@ -470,7 +556,8 @@ class _TripDetailBody extends StatelessWidget {
         const SizedBox(height: AppTheme.space8),
         Row(
           children: [
-            Expanded(child: StatBox(label: 'DURATION', value: durationLabel)),
+            Expanded(
+                child: StatBox(label: 'DURATION', value: widget.durationLabel)),
             const SizedBox(width: AppTheme.space8),
             Expanded(
               child: StatBox(
@@ -512,8 +599,8 @@ class _TripDetailBody extends StatelessWidget {
                 icon: Icons.speed_outlined,
                 label: 'Odometer',
                 value: hasOdometer
-                    ? '${trip.odometerStart.toStringAsFixed(0)} → '
-                        '${trip.odometerEnd.toStringAsFixed(0)} km'
+                    ? 'Start: ${NumberFormat('#,##0').format(trip.odometerStart.round())} km'
+                        '\nEnd:   ${NumberFormat('#,##0').format(trip.odometerEnd.round())} km'
                     : 'Not recorded',
               ),
               DetailRow(
@@ -566,17 +653,21 @@ class _TripDetailBody extends StatelessWidget {
     );
   }
 
-  /// A lone (unclustered) stop. `flutter_map_marker_cluster` renders a
-  /// marker's own [Marker.child] directly whenever it ends up alone at the
-  /// current zoom — only markers grouped into an actual cluster are passed
-  /// to [MarkerClusterLayerOptions.builder]. So this is what "small ringed
-  /// dot" maps to.
-  Widget _stopDotMarker(AppColors colors) {
+  Widget _numberedStopMarker(AppColors colors, int number, bool selected) {
     return Container(
       decoration: BoxDecoration(
-        color: colors.surfaceElevated,
+        color: selected ? colors.accent : colors.surfaceElevated,
         shape: BoxShape.circle,
         border: Border.all(color: colors.accent, width: 2),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        '$number',
+        style: TextStyle(
+          color: selected ? colors.accentInk : colors.accent,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -615,12 +706,18 @@ class _TimelineEntry {
     required this.name,
     required this.timeMs,
     required this.meta,
+    this.stopNumber,
+    this.odometerKm,
+    this.segmentDistanceKm,
   });
 
   final _TimelineKind kind;
   final String name;
   final int timeMs;
   final String meta;
+  final int? stopNumber;        // 1-based; matches the numbered map pin
+  final double? odometerKm;    // computed odometer reading at this point
+  final double? segmentDistanceKm; // distance from the previous entry
 }
 
 /// One row: indicator + connector on the left, name/time/meta on the right.
@@ -631,83 +728,151 @@ class _TimelineRow extends StatelessWidget {
     required this.entry,
     required this.isLast,
     required this.timeLabel,
+    this.isSelected = false,
+    this.onTap,
   });
 
   final _TimelineEntry entry;
   final bool isLast;
   final String timeLabel;
+  final bool isSelected;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
-    // IntrinsicHeight gives the Row a bounded height (from its tallest
-    // child, the text column on the right) so the connector's Expanded
-    // below has something finite to fill — without it, this sits in the
-    // unbounded vertical space of the enclosing ListView and throws.
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 14,
-            child: Column(
-              children: [
-                _TimelineIndicator(kind: entry.kind, color: colors.accent),
-                if (!isLast)
-                  Expanded(
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(vertical: 3),
-                      constraints: const BoxConstraints(minHeight: 22),
-                      child: CustomPaint(
-                        painter: _DashedLinePainter(
-                          color: colors.accent.withValues(alpha: 0.5),
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? colors.accent.withValues(alpha: 0.08)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 14,
+                child: Column(
+                  children: [
+                    _TimelineIndicator(kind: entry.kind, color: colors.accent),
+                    if (!isLast)
+                      Expanded(
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(vertical: 3),
+                          constraints: const BoxConstraints(minHeight: 22),
+                          child: CustomPaint(
+                            painter: _DashedLinePainter(
+                              color: colors.accent.withValues(alpha: 0.5),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(width: AppTheme.space10),
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(bottom: isLast ? 0 : AppTheme.space14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppTheme.space10),
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(
+                      bottom: isLast ? 0 : AppTheme.space14),
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Text(
-                          entry.name,
-                          style:
-                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              entry.name,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(
                                     color: colors.textPrimary,
                                     fontWeight: FontWeight.w500,
                                   ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 2,
-                        ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 2,
+                            ),
+                          ),
+                          const SizedBox(width: AppTheme.space8),
+                          Text(
+                            timeLabel,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(color: colors.textDim),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: AppTheme.space8),
+                      const SizedBox(height: 2),
                       Text(
-                        timeLabel,
+                        entry.meta.toUpperCase(),
                         style: Theme.of(context)
                             .textTheme
                             .labelSmall
-                            ?.copyWith(color: colors.textDim),
+                            ?.copyWith(
+                                color: colors.textDimmer,
+                                letterSpacing: 0.6),
                       ),
+                      if (entry.odometerKm != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          '${NumberFormat('#,##0').format(entry.odometerKm!.round())} km odometer',
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(
+                                color: colors.accent
+                                    .withValues(alpha: 0.75),
+                                fontSize: 9,
+                              ),
+                        ),
+                      ],
                     ],
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    entry.meta.toUpperCase(),
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: colors.textDimmer, letterSpacing: 0.6),
-                  ),
-                ],
+                ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SegmentDistanceLabel extends StatelessWidget {
+  const _SegmentDistanceLabel({required this.km});
+
+  final double km;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(left: 24, bottom: 4),
+      child: Row(
+        children: [
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: colors.surfaceInset,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(
+                  color: colors.border.withValues(alpha: 0.6)),
+            ),
+            child: Text(
+              '${km.toStringAsFixed(1)} km',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: colors.textDim,
+                    fontSize: 9,
+                  ),
             ),
           ),
         ],

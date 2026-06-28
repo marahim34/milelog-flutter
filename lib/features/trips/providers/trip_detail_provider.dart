@@ -58,8 +58,6 @@ class TripDetailNotifier
   Future<void> updateTripDetails({
     required TripType tripType,
     required String companyName,
-    required double odometerStart,
-    required double odometerEnd,
     required String notes,
   }) async {
     final current = state.value;
@@ -68,8 +66,6 @@ class TripDetailNotifier
     final updatedTrip = current.trip.copyWith(
       tripType: tripType.value,
       companyName: companyName,
-      odometerStart: odometerStart,
-      odometerEnd: odometerEnd,
       notes: notes,
     );
 

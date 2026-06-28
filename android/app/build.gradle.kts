@@ -49,4 +49,7 @@ dependencies {
     // Durable (survives process death) scheduling for the Bluetooth
     // killed-app auto-track path — see BluetoothAutoTrackPrefs.kt.
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+    // FusedLocationProviderClient used by TrackingService for native GPS.
+    // Same version as geolocator_android plugin to avoid classpath conflicts.
+    implementation("com.google.android.gms:play-services-location:21.2.0")
 }

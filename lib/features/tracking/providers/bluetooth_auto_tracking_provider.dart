@@ -75,13 +75,13 @@ class BluetoothAutoTrackingController {
 
   Future<void> _handleConnected(String mac, Vehicle vehicle) async {
     if (!_ref.exists(trackingNotifierProvider)) {
-      AppRouter.router.push(
-        AppRoutes.tracking,
-        extra: TrackingScreenArgs(
-          vehicleId: vehicle.id,
-          tripType: TripType.business,
-        ),
-      );
+      // Native BluetoothAutoStartReceiver already created the trip and
+      // started TrackingService on ACL_CONNECTED. Attempting AppRouter.push()
+      // here is blocked by Android 12+ background-activity-launch restrictions
+      // — it silently fails for all non-foreground states, which was the root
+      // cause of "auto-start works once then stops". The user opens the app
+      // via the TrackingService persistent notification; crash recovery then
+      // surfaces the active trip automatically.
       return;
     }
 
